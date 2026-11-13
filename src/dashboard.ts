@@ -1,3 +1,4 @@
+import { groupBreakdown } from './accounting/breakdown';
 import { fxNotices } from './accounting/fx-notices';
 import { availableYears, preliminaryTCO, report, type Basis } from './accounting/calculate';
 import type { Dataset } from './accounting/schema';
@@ -16,7 +17,8 @@ function render() {
   const basis = $<HTMLInputElement>('input[name=basis]:checked').value as Basis;
   const r = report(data,id,period==='lifetime'?null:Number(period),basis);
   const d=r.distance, e=r.energy;
-  const entries=Object.entries(r.breakdown).sort((a,b)=>b[1]-a[1]);
+  const groups=groupBreakdown(r.breakdown);
+  const largestGroup=Math.max(...groups.map(group=>group.total),1);
   const warnings:string[]=[];
   if(!r.hasPurchase) warnings.push('No purchase transaction is recorded. Add an expense with category purchase to the payment year’s event file. Expense totals include known records only.');
   if(!r.v.handover || r.v.initial_state.odometer_km===null) warnings.push('Add the handover date and initial odometer to begin ownership mileage.');
@@ -43,8 +45,13 @@ function render() {
       ${metric('Operating / useful km',money(r.operatingPerUseful,2),'Gross operating costs ÷ useful distance',true)}
     </section>
     <section class="two-columns" id="costs"><article class="panel"><div class="section-heading"><div><p class="eyebrow">WHERE IT GOES</p><h2>Cost breakdown</h2></div><span class="tag">EUR</span></div>
-    ${entries.length?`<div class="bars">${entries.map(([category,value])=>`<div class="bar-row"><div><span>${title(category)}</span><strong>${money(value,2)}</strong></div><div class="bar-track"><span style="width:${Math.max(1,value/Math.max(...entries.map(x=>x[1]),1)*100)}%"></span></div></div>`).join('')}</div>`:empty}
-    <div class="panel-foot">${line('Vehicle purchase (in period)',money(r.purchaseInPeriod,2))}${line('Acquisition costs (in period)',money(r.acquisition,2))}${line('Operating expenses',money(r.operating,2))}</div></article>
+    ${groups.length?`<div class="bars">${groups.map(group=>{
+      const bar=`<span class="bar-track"><span style="width:${group.total/largestGroup*100}%"></span></span>`;
+      return group.expandable
+        ? `<details class="bar-row cost-group"><summary><span class="bar-heading"><span class="group-label">${escape(group.label)}</span><strong>${money(group.total,2)}</strong></span>${bar}</summary><dl>${group.categories.map(item=>`<div><dt>${title(item.category)}</dt><dd>${money(item.amount,2)}</dd></div>`).join('')}</dl></details>`
+        : `<div class="bar-row"><div><span>${escape(group.label)}</span><strong>${money(group.total,2)}</strong></div>${bar}</div>`;
+    }).join('')}</div>`:empty}
+    <div class="panel-foot">${line('Vehicle purchase (in period)',money(r.purchaseInPeriod,2))}${line('Acquisition & Improvements (in period)',money(r.acquisition,2))}${line('Operating expenses',money(r.operating,2))}</div></article>
     <article class="panel"><div class="section-heading"><div><p class="eyebrow">THE FULL PICTURE</p><h2>Income & ownership</h2></div></div>
     ${line('THG income',money(r.thg,2))}${line('Employer reimbursements',money(r.reimbursements,2))}${line('Sale receipts (in period)',money(r.saleInPeriod,2))}
     <div class="tco-box"><span>Realized lifetime TCO</span><strong>${money(r.realized)}</strong><p>${r.realized!==null?'Purchase + acquisition + operating − THG − actual sale proceeds. Based on recorded costs.':r.year!==null?'Select Lifetime to view realized TCO.':r.v.sale?'Complete purchase, sale, missing prices and FX rates to calculate realized TCO.':'Available after an actual sale. No depreciation or assumed resale value is included.'}</p>${r.realized!==null?`<small>After employer reimbursements: ${money(r.realizedPersonal,2)} · per useful km: ${money(d.useful&&d.useful>0?r.realized/d.useful:null,2)}</small>`:''}</div>

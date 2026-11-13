@@ -64,10 +64,10 @@ For expenses use `type: expense`, a fixed `category`, `amount`, `currency`, and 
 | Group | Categories |
 | --- | --- |
 | Purchase | `purchase` |
-| Acquisition costs | `registration`, `acquisition`, `accessories` |
+| Acquisition & Improvements | `registration`, `acquisition`, `accessories` |
 | Operating | `charging`, `fuel`, `insurance`, `vehicle_tax`, `maintenance`, `repairs`, `inspection`, `tyres`, `parking`, `tolls`, `cleaning`, `subscriptions` |
 
-`acquisition` covers incidental costs of acquiring the vehicle, such as collection travel or purchase-related fees; the vehicle price itself belongs in `purchase`. Accessories remain a separate category in the breakdown and count toward acquisition costs and TCO, even when bought after handover. Acquisition costs are excluded from operating costs/km. `registration` means initial acquisition registration costs. Put recurring vehicle tax in `vehicle_tax`. Gross amounts should include taxes you actually paid. The MVP does not model refundable deposits, financing principal/interest, refunds or partial purchase payments; do not force those into unrelated categories.
+`acquisition` covers incidental costs of acquiring the vehicle, such as collection travel or purchase-related fees; the vehicle price itself belongs in `purchase`. Accessories remain a separate category in the breakdown and count toward acquisition costs and TCO, even when bought after handover. Acquisition & Improvements are excluded from operating costs/km. `registration` means initial acquisition registration costs. Put recurring vehicle tax in `vehicle_tax`. Gross amounts should include taxes you actually paid. The MVP does not model refundable deposits, financing principal/interest, refunds or partial purchase payments; do not force those into unrelated categories.
 
 Income uses `type: income` with `category: thg` (vehicle-related) or `employer_reimbursement` (personal offset, always shown separately). No trip-level reimbursement attribution is needed.
 
@@ -80,6 +80,8 @@ Rates are **foreign currency units per 1 EUR**. An amount of 250 CZK with rate 2
 Maintain monthly source rates, not converted transaction amounts. Select a consistent monthly rate source/convention and document it in YAML comments. There is no automatic exchange-rate download in the MVP. Calculations preserve precision until display rounding to avoid cumulative rounding drift.
 
 ## Reports and definitions
+
+The cost breakdown groups accessories, acquisition and registration under **Acquisition & Improvements**, and charging plus subscriptions under **Charging & subscriptions**. Select either group’s name to expand it to see its individual categories and amounts. This presentation grouping does not change accounting or charging-session metrics.
 
 - **Gross recorded expenses** = purchase in period + acquisition fees + operating costs.
 - **Net vehicle expenses** = gross − THG income, before sale.

@@ -4,3 +4,5 @@
 .transaction-note{display:block;white-space:pre-wrap;overflow-wrap:anywhere;min-width:140px;max-width:320px;margin-top:6px;font-size:11px;line-height:1.6;color:#68766c;font-weight:400}
 
 .notice.fx-error{background:#fff0ed;border-color:#e6b5ac;color:#8b3022}
+
+ .bar-track{display:block}.cost-group{font-size:11px}.cost-group summary{cursor:pointer;list-style:none}.cost-group summary::-webkit-details-marker{display:none}.bar-heading{display:flex;justify-content:space-between;gap:16px;margin-bottom:10px}.group-label::before{content:'▸';display:inline-block;width:14px;color:#49633c}.cost-group[open] .group-label::before{content:'▾'}.cost-group dl{margin:12px 0 0;padding:4px 12px;background:#f0f3e8;border-radius:6px}.cost-group dl>div{display:flex;justify-content:space-between;gap:16px;padding:8px 0}.cost-group dt{color:#68766c}.cost-group dd{margin:0;white-space:nowrap}
