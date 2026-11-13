@@ -1,6 +1,13 @@
 # SYNTHETIC EXAMPLES ONLY. Adapt to actual records before using.
 events:
   - vehicle: example-car
+    date: 2024-01-02 # payment date determines annual file and FX month
+    purchase_date: 2024-01-01 # optional contract date, when different
+    type: expense
+    category: purchase
+    amount: 30000
+    currency: EUR
+  - vehicle: example-car
     date: 2024-01-03
     type: non_useful_mileage
     reason: collection

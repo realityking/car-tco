@@ -6,11 +6,6 @@ vehicles:
     first_registration: 2024-01-01
     registration: 2024-01-02
     handover: 2024-01-03
-    purchase:
-      date: 2024-01-01
-      payment_date: 2024-01-02
-      amount: 30000
-      currency: EUR
     initial_state:
       odometer_km: 1000
       soc_percent: 80

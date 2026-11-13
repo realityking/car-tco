@@ -37,6 +37,11 @@ export function report(data: Dataset, vehicleId: string, year: number | null = n
   const v = data.vehicles.find(v => v.id === vehicleId);
   if (!v) throw new Error('Unknown vehicle');
   const events = data.events.filter(e => e.vehicle === vehicleId);
+  const purchaseEvent = events.find(e => e.type === 'expense' && e.category === 'purchase');
+  const purchaseDate = purchaseEvent?.date ?? null;
+  const purchase = purchaseEvent?.type === 'expense' && purchaseEvent.amount !== null ? toEUR(purchaseEvent.amount,purchaseEvent.currency,purchaseEvent.date,data.rates) : null;
+  const purchaseInPeriod = purchaseDate && (year === null || purchaseDate.startsWith(`${year}-`)) ? purchase : 0;
+  const purchasedOn = purchaseEvent?.type === 'expense' ? purchaseEvent.purchase_date ?? purchaseEvent.date : null;
   const breakdown: Record<string,number> = {};
   let operating=0, acquisition=0, thg=0, reimbursements=0, unknownPrices=0;
   const ledger: {date:string; label:string; original:number|null; currency:string; eur:number|null; allocated:number|null}[] = [];
@@ -51,12 +56,10 @@ export function report(data: Dataset, vehicleId: string, year: number | null = n
     if (e.type === 'income') { if (e.category === 'thg') thg+=amount; else reimbursements+=amount; }
     else {
       breakdown[e.category]=(breakdown[e.category]??0)+amount;
+      if (e.category === 'purchase') continue;
       if (acquisitionCategories.includes(e.category)) acquisition+=amount; else operating+=amount;
     }
   }
-  const purchaseDate = v.purchase.payment_date ?? v.purchase.date;
-  const purchase = v.purchase.amount !== null && purchaseDate ? toEUR(v.purchase.amount,v.purchase.currency,purchaseDate,data.rates) : null;
-  const purchaseInPeriod = purchaseDate && (year === null || purchaseDate.startsWith(`${year}-`)) ? purchase : 0;
   const saleDate = v.sale?.payment_date ?? v.sale?.date;
   const sale = v.sale && v.sale.amount !== null && saleDate ? toEUR(v.sale.amount,v.sale.currency,saleDate,data.rates) : null;
   const saleInPeriod = saleDate && (year === null || saleDate.startsWith(`${year}-`)) ? sale : 0;
@@ -76,7 +79,7 @@ export function report(data: Dataset, vehicleId: string, year: number | null = n
   const opening = v.battery?.usable_capacity_kwh != null && v.initial_state.soc_percent !== null ? v.battery.usable_capacity_kwh*v.initial_state.soc_percent/100 : null;
   const closing = v.battery?.usable_capacity_kwh != null && v.sale?.soc_percent != null ? v.battery.usable_capacity_kwh*v.sale.soc_percent/100 : null;
   const adjusted = year === null && v.sale && opening !== null && closing !== null && !missingEnergy && energy+opening-closing >= 0 ? energy+opening-closing : null;
-  return {v,year,basis,operating,acquisition,purchase,purchaseInPeriod,sale,saleInPeriod,gross,netVehicle,netPersonal,thg,reimbursements,realized,realizedPersonal: realized === null ? null : realized-reimbursements,unknownPrices,breakdown,ledger:ledger.sort((a,b)=>b.date.localeCompare(a.date)),distance,
+  return {v,year,basis,operating,acquisition,purchasedOn,purchase,purchaseInPeriod,sale,saleInPeriod,gross,netVehicle,netPersonal,thg,reimbursements,realized,realizedPersonal: realized === null ? null : realized-reimbursements,unknownPrices,breakdown,ledger:ledger.sort((a,b)=>b.date.localeCompare(a.date)),distance,
     operatingPerTotal:ratio(operating,distance.total),operatingPerUseful:ratio(operating,distance.useful),netOperatingPerUseful:ratio(operating-thg-reimbursements,distance.useful),
     energy:{kwh:energy,sessions:charging.length,missingEnergy,missingPrices:charging.filter(e=>e.amount===null).length,measurements,averagePrice:ratio(pricedCost,pricedKwh),per100:ratio(energy*100,distance.total),kmPerKwh:distance.total === null ? null : ratio(distance.total,energy),opening,closing,adjusted,adjustedPer100:adjusted===null?null:ratio(adjusted*100,distance.total)}};
 }
@@ -93,6 +96,6 @@ export function availableYears(data: Dataset): number[] {
     if (e.type === 'expense') add(e.occurred_on);
     if ((e.type === 'expense' || e.type === 'income') && e.coverage) for (let y=Number(e.coverage.start.slice(0,4)); y<=Number(e.coverage.end.slice(0,4)); y++) years.add(y);
   }
-  for (const v of data.vehicles) {add(v.handover);add(v.purchase.date);add(v.purchase.payment_date);add(v.sale?.date);add(v.sale?.payment_date);}
+  for (const v of data.vehicles) {add(v.handover);add(v.sale?.date);add(v.sale?.payment_date);}
   return [...years].sort((a,b)=>b-a);
 }

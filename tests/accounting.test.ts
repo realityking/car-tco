@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { annualShare, availableYears, mileage, preliminaryTCO, report, toEUR } from '../src/accounting/calculate';
 import { eventSchema, validateDataset, vehicleSchema, type Dataset, type Event, type Vehicle } from '../src/accounting/schema';
 import { missingCostEvent, reconcileSessions, type ImportedSession } from '../src/accounting/imports';
-import { loadData } from '../src/data/load';
 
-const vehicle: Vehicle = {id:'test',manufacturer:'Synthetic',model:'Test fixture',first_registration:null,registration:null,handover:'2024-01-01',purchase:{date:'2023-12-20',payment_date:'2024-01-01',amount:30000,currency:'EUR'},initial_state:{odometer_km:1000,soc_percent:80},battery:{usable_capacity_kwh:80}};
+const vehicle: Vehicle = {id:'test',manufacturer:'Synthetic',model:'Test fixture',first_registration:null,registration:null,handover:'2024-01-01',initial_state:{odometer_km:1000,soc_percent:80},battery:{usable_capacity_kwh:80}};
 const expense = (overrides:Partial<Extract<Event,{type:'expense'}>>={}): Extract<Event,{type:'expense'}> => ({vehicle:'test',type:'expense',date:'2024-06-01',category:'charging',amount:100,currency:'EUR',energy_kwh:200,measurement:'charger',...overrides});
-const dataset = (events:Event[]=[], v:Vehicle=structuredClone(vehicle)):Dataset => ({vehicles:[v],events,rates:{'2024-06':{CZK:25}}});
+const purchase: Event = {vehicle:'test',type:'expense',category:'purchase',date:'2024-01-01',purchase_date:'2023-12-20',amount:30000,currency:'EUR'};
+const dataset = (events:Event[]=[], v:Vehicle=structuredClone(vehicle), includePurchase=true):Dataset => ({vehicles:[v],events:includePurchase?[purchase,...events]:events,rates:{'2024-06':{CZK:25}}});
 
 describe('FX',()=>{
   it('converts foreign units per EUR and permits EUR without a rate',()=>{expect(toEUR(250,'CZK','2024-06-01',{'2024-06':{CZK:25}})).toBe(10);expect(toEUR(17,'EUR','2024-01-01',{})).toBe(17)});
@@ -18,7 +18,7 @@ describe('annual allocation',()=>{
   it('cash follows payment date and lifetime never duplicates',()=>{expect(annualShare(e,2023,'cash')).toBe(1);expect(annualShare(e,2024,'cash')).toBe(0);expect(annualShare(e,null,'accrual')).toBe(1)});
   it('supports a one-day coverage period',()=>expect(annualShare({date:'2023-12-01',coverage:{start:'2024-02-29',end:'2024-02-29'}},2024,'accrual')).toBe(1));
   it('converts before allocating and retains payment-month FX',()=>{const r=report(dataset([expense({amount:250,currency:'CZK',coverage:{start:'2024-12-31',end:'2025-01-01'}})]),'test',2025);expect(r.operating).toBe(5)});
-  it('finds every coverage year and purchase payment year',()=>expect(availableYears(dataset([expense({coverage:{start:'2024-01-01',end:'2026-12-31'}})]))).toEqual([2026,2025,2024,2023]));
+  it('finds every coverage year and purchase payment year',()=>expect(availableYears(dataset([expense({coverage:{start:'2024-01-01',end:'2026-12-31'}})]))).toEqual([2026,2025,2024]));
 });
 describe('financial separation and TCO',()=>{
   const events:Event[]=[expense(),expense({category:'registration',amount:50,energy_kwh:undefined,measurement:undefined}),{vehicle:'test',type:'income',category:'thg',date:'2024-06-01',amount:30,currency:'EUR'},{vehicle:'test',type:'income',category:'employer_reimbursement',date:'2024-06-01',amount:20,currency:'EUR'}];
@@ -26,7 +26,7 @@ describe('financial separation and TCO',()=>{
   it('uses purchase payment date without depreciating',()=>{expect(report(dataset(events),'test',2023).purchaseInPeriod).toBe(0);expect(report(dataset(events),'test',2024).purchaseInPeriod).toBe(30000)});
   it('only recognizes realized lifetime TCO after sale',()=>{const v={...vehicle,sale:{date:'2025-01-01',amount:20000,currency:'EUR',odometer_km:11000,soc_percent:30}};const r=report(dataset(events,v),'test');expect(r.realized).toBe(10120);expect(r.realizedPersonal).toBe(10100);expect(report(dataset(events,v),'test',2024).realized).toBeNull()});
   it('keeps hypothetical resale out of actual totals',()=>{const d=dataset(events);expect(preliminaryTCO(d,'test',20000)).toBe(10120);expect(report(d,'test').netVehicle).toBe(30120);expect(()=>preliminaryTCO(d,'test',-1)).toThrow()});
-  it('does not fabricate unknown purchase or charging amounts',()=>{const d=dataset([expense({amount:null})],{...vehicle,purchase:{date:null,amount:null,currency:'EUR'}});const r=report(d,'test');expect(r.purchase).toBeNull();expect(r.unknownPrices).toBe(1);expect(r.ledger[0].eur).toBeNull();expect(preliminaryTCO(d,'test',0)).toBeNull()});
+  it('does not fabricate unknown purchase or charging amounts',()=>{const d=dataset([expense({amount:null})],vehicle,false);const r=report(d,'test');expect(r.purchase).toBeNull();expect(r.unknownPrices).toBe(1);expect(r.ledger[0].eur).toBeNull();expect(preliminaryTCO(d,'test',0)).toBeNull()});
   it('isolates vehicles',()=>{const d=dataset(events);d.vehicles.push({...vehicle,id:'second'});expect(report(d,'second').operating).toBe(0)});
 });
 describe('mileage',()=>{
@@ -43,7 +43,7 @@ describe('energy',()=>{
   it('withholds inventory estimate with missing kWh or closing SoC',()=>{expect(report(dataset([expense()]),'test').energy.adjusted).toBeNull();const v={...vehicle,sale:{date:'2025-01-01',amount:20000,currency:'EUR',odometer_km:11000,soc_percent:30}};expect(report(dataset([expense({energy_kwh:undefined})],v),'test').energy.adjusted).toBeNull()});
 });
 describe('validation',()=>{
-  it('loads the empty actual Q6 dataset',()=>{const d=loadData();expect(d.events).toEqual([]);expect(d.vehicles[0].purchase.amount).toBeNull()});
+  it('accepts a vehicle without purchase metadata',()=>{expect(vehicleSchema.parse(vehicle)).toEqual(vehicle);expect(report(dataset([],vehicle,false),'test').purchase).toBeNull()});
   it('rejects categories, impossible dates, negative prices and bad SoC',()=>{expect(()=>eventSchema.parse({...expense(),category:'misc'})).toThrow();expect(()=>eventSchema.parse({...expense(),date:'2024-02-30'})).toThrow();expect(()=>eventSchema.parse({...expense(),amount:-1})).toThrow();expect(()=>vehicleSchema.parse({...vehicle,initial_state:{odometer_km:0,soc_percent:101}})).toThrow()});
   it('rejects manual transaction IDs and invalid coverage',()=>{expect(()=>eventSchema.parse({...expense(),id:'manual'})).toThrow();expect(()=>eventSchema.parse({...expense(),coverage:{start:'2024-03-01',end:'2024-02-01'}})).toThrow()});
   it('rejects unknown vehicles and duplicate vehicle IDs',()=>{expect(()=>validateDataset(dataset([{...expense(),vehicle:'missing'}]))).toThrow('Unknown vehicle');const d=dataset();d.vehicles.push(vehicle);expect(()=>validateDataset(d)).toThrow('Duplicate')});
@@ -55,4 +55,48 @@ describe('future import boundary',()=>{
   it('never auto-merges plausible same-day charges',()=>expect(reconcileSessions([s],[expense()])[0].status).toBe('review'));
   it('detects imported duplicates and exact source matches',()=>{expect(reconcileSessions([s,s],[]).map(r=>r.status)).toEqual(['missing_cost','duplicate_import']);expect(reconcileSessions([s],[{...expense(),source:s.source,source_record:s.source_record}])[0].status).toBe('linked')});
   it('unknown costs are not confused with free charging',()=>expect(missingCostEvent(s).amount).toBeNull());
+});
+
+describe('purchase transactions',()=>{
+  it('counts purchase once in totals and includes it in the ledger and breakdown',()=>{
+    const r=report(dataset([expense()]),'test');
+    expect(r.purchase).toBe(30000);
+    expect(r.gross).toBe(30100);
+    expect(r.breakdown.purchase).toBe(30000);
+    expect(r.ledger.filter(e=>e.label==='purchase')).toHaveLength(1);
+    expect(r.operating).toBe(100);
+    expect(r.acquisition).toBe(0);
+    expect(r.energy.sessions).toBe(1);
+    expect(r.purchasedOn).toBe('2023-12-20');
+  });
+  it('converts purchases using payment-month FX for both bases',()=>{
+    const d=dataset([{...purchase,date:'2024-06-01',amount:750000,currency:'CZK'}],vehicle,false);
+    for (const basis of ['cash','accrual'] as const) {
+      expect(report(d,'test',2024,basis).purchaseInPeriod).toBe(30000);
+      expect(report(d,'test',2023,basis).gross).toBe(0);
+    }
+    expect(availableYears(d)).toEqual([2024]);
+  });
+  it('keeps an explicitly zero-priced acquisition distinct from a missing purchase',()=>{
+    expect(report(dataset([{...purchase,amount:0}],vehicle,false),'test').purchase).toBe(0);
+    expect(report(dataset([],vehicle,false),'test').purchase).toBeNull();
+  });
+  it('does not share purchase prices between vehicles',()=>{
+    const d=dataset(); d.vehicles.push({...vehicle,id:'second'});
+    expect(report(d,'second').purchase).toBeNull();
+    expect(report(d,'second').gross).toBe(0);
+  });
+  it('rejects duplicate purchases and legacy vehicle purchase blocks',()=>{
+    expect(()=>validateDataset(dataset([purchase]))).toThrow('Duplicate purchase');
+    expect(()=>vehicleSchema.parse({...vehicle,purchase:{date:'2024-01-01',amount:30000,currency:'EUR'}})).toThrow();
+  });
+  it('rejects purchase coverage and unknown amounts',()=>{
+    expect(()=>eventSchema.parse({...purchase,coverage:{start:'2024-01-01',end:'2025-01-01'}})).toThrow('coverage');
+    expect(()=>eventSchema.parse({...purchase,amount:null})).toThrow();
+    expect(()=>eventSchema.parse({...expense(),purchase_date:'2024-01-01'})).toThrow();
+  });
+  it('rejects a sale preceding the purchase contract',()=>{
+    const v={...vehicle,handover:null,sale:{date:'2023-12-01',amount:20000,currency:'EUR',odometer_km:null,soc_percent:null}};
+    expect(()=>validateDataset(dataset([],v))).toThrow('Sale precedes purchase');
+  });
 });

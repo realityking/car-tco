@@ -20,7 +20,7 @@ npm run preview
 
 ## Files and entry workflow
 
-- `data/vehicles.yaml`: vehicle identifiers, dates, purchase, optional sale and baseline readings.
+- `data/vehicles.yaml`: vehicle identifiers, lifecycle dates, optional sale and baseline readings. Purchase belongs in the annual event file.
 - `data/events/YYYY.yaml`: one file per event/payment calendar year, containing an `events` list. Multiple cars use the same annual file; every entry requires `vehicle`.
 - `data/exchange-rates.yaml`: monthly rates for automatic EUR conversion.
 - `src/accounting/`: pure calculations, validation and future import interface, with no filesystem or network calls.
@@ -28,13 +28,33 @@ npm run preview
 - `examples/`: isolated, explicitly synthetic examples, never loaded into the real dashboard.
 - `tests/`: synthetic fixtures and accounting tests.
 
-Start by filling in the vehicle's known facts; leave unknown values `null`. Add actual financial events and odometer measurements. For a second car, add another vehicle with a unique ID and reference it in its events. Do not add purchase or sale as expense/income events: they are read directly from the vehicle once.
+Start by filling in the vehicle's known facts; leave unknown values `null`. Add actual financial events and odometer measurements. For a second car, add another vehicle with a unique ID and reference it in its events. Record the purchase once as an expense with category `purchase` in the payment year’s event file. Do not also store purchase data in the vehicle. Sale remains in the vehicle’s `sale` block for now; do not duplicate it as income.
 
 ## Vehicle lifecycle
 
-`first_registration` is the first registration anywhere; `registration` is registration to you; `handover` is physical delivery and the start of measured ownership mileage. `purchase.date` is the contract/purchase date; optional `purchase.payment_date` overrides it for cash timing and FX. `purchase.amount` is the actual amount paid in `purchase.currency`.
+`first_registration` is the first registration anywhere; `registration` is registration to you; `handover` is physical delivery and the start of measured ownership mileage.
 
-`initial_state.odometer_km` and `soc_percent` describe handover. `battery.usable_capacity_kwh` is optional and must be actual known usable capacity. Add `sale` only after sale, with `date`, actual `amount`, `currency`, `odometer_km`, `soc_percent`, and optional `payment_date`. Unknown sale amount or readings can remain null. Dates use YYYY-MM-DD; amounts are nonnegative. Unknown purchase price remains unknown, not zero. The example vehicle shows the full schema.
+`initial_state.odometer_km` and `soc_percent` describe handover. `battery.usable_capacity_kwh` is optional and must be actual known usable capacity. Add `sale` only after sale, with `date`, actual `amount`, `currency`, `odometer_km`, `soc_percent`, and optional `payment_date`. Unknown sale amount or readings can remain null. Dates use YYYY-MM-DD; amounts are nonnegative. Without a purchase transaction, the purchase price remains unknown, not zero. The example vehicle shows the full schema.
+
+## Purchase transaction
+
+Store the full actual purchase once in `data/events/YYYY.yaml`, using the payment year:
+
+```yaml
+# Schema example: replace placeholders with actual values before use.
+events:
+  - vehicle: your-vehicle-id
+    date: YYYY-MM-DD # payment date
+    type: expense
+    category: purchase
+    amount: ACTUAL_PRICE
+    currency: EUR
+    # purchase_date: YYYY-MM-DD # optional contract date if different
+```
+
+The purchase appears in the financial ledger and category breakdown and contributes exactly once to gross/net expenses and TCO. It is excluded from operating costs and energy metrics. Payment date determines the annual report and FX month in both cash and accrual views; optional `purchase_date` is informational. The MVP accepts at most one full-price purchase per vehicle and rejects duplicate purchases, coverage periods, missing amounts and legacy `purchase` blocks in vehicles.yaml. Partial purchase payments are not yet modeled.
+
+When migrating older data, move `purchase.amount` and `currency` into this event, use `payment_date` (or the old `date`) as its `date`, and preserve a different contract date as `purchase_date`. Remove the vehicle’s entire purchase block. No transaction IDs are needed.
 
 ## Financial events
 
@@ -42,6 +62,7 @@ For expenses use `type: expense`, a fixed `category`, `amount`, `currency`, and 
 
 | Group | Categories |
 | --- | --- |
+| Purchase | `purchase` |
 | Acquisition fees | `registration`, `acquisition_fees` |
 | Operating | `charging`, `fuel`, `insurance`, `vehicle_tax`, `maintenance`, `repairs`, `inspection`, `tyres`, `parking`, `tolls`, `cleaning`, `accessories`, `subscriptions` |
 
@@ -49,11 +70,11 @@ For expenses use `type: expense`, a fixed `category`, `amount`, `currency`, and 
 
 Income uses `type: income` with `category: thg` (vehicle-related) or `employer_reimbursement` (personal offset, always shown separately). No trip-level reimbursement attribution is needed.
 
-Optional `coverage: { start: YYYY-MM-DD, end: YYYY-MM-DD }` allocates an expense or income evenly over **inclusive calendar days**. Accrual annual reports use the overlap with each calendar year, including leap days. Cash reports use the payment date. Without coverage, both use payment date. Lifetime sums count each item exactly once. Purchase/acquisition is not depreciated; the purchase price is recognized at payment, including in the accrual view.
+Optional `coverage: { start: YYYY-MM-DD, end: YYYY-MM-DD }` allocates an expense or income evenly over **inclusive calendar days**. Accrual annual reports use the overlap with each calendar year, including leap days. Cash reports use the payment date. Without coverage, both use payment date. Lifetime sums count each item exactly once. Purchase is not depreciated: it is recognized at payment in both views, and coverage is not allowed on purchase transactions.
 
 ### FX
 
-Rates are **foreign currency units per 1 EUR**. An amount of 250 CZK with rate 25 becomes EUR 10. Use the event's **payment month**, even if its coverage belongs to another year. Purchase/sale use their payment date override, or their date. EUR is implicitly 1; a zero-priced charge needs no exchange rate. Missing foreign rates fail the build rather than silently using a different month. Currency codes must be uppercase three-letter codes.
+Rates are **foreign currency units per 1 EUR**. An amount of 250 CZK with rate 25 becomes EUR 10. Use the event's **payment month**, even if its coverage belongs to another year. Purchase uses the transaction’s `date` (payment date). Sale uses its payment date override, or its date. EUR is implicitly 1; a zero-priced charge needs no exchange rate. Missing foreign rates fail the build rather than silently using a different month. Currency codes must be uppercase three-letter codes.
 
 Maintain monthly source rates, not converted transaction amounts. Select a consistent monthly rate source/convention and document it in YAML comments. There is no automatic exchange-rate download in the MVP. Calculations preserve precision until display rounding to avoid cumulative rounding drift.
 

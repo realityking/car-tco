@@ -1,3 +1,8 @@
-# No Q6 expenses or measurements have been recorded yet.
 # Financial date = payment date. Keep each event in its date's annual file.
-events: []
+events:
+  - vehicle: q6
+    date: 2026-10-28
+    type: expense
+    category: purchase
+    amount: 55800
+    currency: EUR

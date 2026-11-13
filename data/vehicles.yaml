@@ -3,14 +3,9 @@ vehicles:
   - id: q6
     manufacturer: Audi
     model: Q6 e-tron
-    first_registration: null
-    registration: null
-    handover: null
-    purchase:
-      date: null
-      payment_date: null # Optional override when payment differs from purchase date
-      amount: null
-      currency: EUR
+    first_registration: 2026-02-18
+    registration: 2026-11-10
+    handover: 2026-11-10
     initial_state:
       odometer_km: null
       soc_percent: null

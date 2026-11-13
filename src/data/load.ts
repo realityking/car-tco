@@ -21,6 +21,6 @@ export function loadData(root = resolve('data')) {
   const data = validateDataset({vehicles,events,rates});
   // Validate every needed FX rate at build time, even for currently unselected vehicles.
   for (const e of events) if ((e.type==='expense' || e.type==='income') && e.amount!==null) toEUR(e.amount,e.currency,e.date,rates);
-  for (const v of vehicles) for (const m of [v.purchase,v.sale]) if(m?.amount!=null && m.date) toEUR(m.amount,m.currency,m.payment_date??m.date,rates);
+  for (const v of vehicles) for (const m of [v.sale]) if(m?.amount!=null && m.date) toEUR(m.amount,m.currency,m.payment_date??m.date,rates);
   return data;
 }
