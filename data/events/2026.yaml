@@ -70,3 +70,37 @@ events:
     amount: 20.88
     currency: EUR
     note: 'License plates'
+
+  - vehicle: q6
+    date: 2026-11-10
+    type: expense
+    category: registration
+    amount: 40.10
+    currency: EUR
+    note: 'Registration'
+
+  - vehicle: q6
+    date: 2026-11-10
+    type: expense
+    category: acquisition
+    amount: 2.5
+    currency: EUR
+    note: 'Parking for registration'
+
+  - vehicle: q6
+    date: 2026-11-15
+    type: expense
+    category: acquisition
+    amount: 83.99
+    currency: EUR
+    note: 'Train to Nuremberg'
+
+  - vehicle: q6
+    date: 2026-11-18
+    type: expense
+    category: insurance
+    amount: 2131.43
+    currency: EUR
+    coverage:
+      start: 2026-11-10
+      end: 2027-11-09

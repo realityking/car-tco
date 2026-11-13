@@ -7,7 +7,7 @@ vehicles:
     registration: 2026-11-10
     handover: 2026-11-16
     initial_state:
-      odometer_km: null
+      odometer_km: 16038
       soc_percent: null
     battery:
       usable_capacity_kwh: null

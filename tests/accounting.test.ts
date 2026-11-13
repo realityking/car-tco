@@ -43,7 +43,7 @@ describe('energy',()=>{
   it('withholds inventory estimate with missing kWh or closing SoC',()=>{expect(report(dataset([expense()]),'test').energy.adjusted).toBeNull();const v={...vehicle,sale:{date:'2025-01-01',amount:20000,currency:'EUR',odometer_km:11000,soc_percent:30}};expect(report(dataset([expense({energy_kwh:undefined})],v),'test').energy.adjusted).toBeNull()});
 });
 describe('validation',()=>{
-  it('accepts a vehicle without purchase metadata',()=>{expect(vehicleSchema.parse(vehicle)).toEqual(vehicle);expect(report(dataset([],vehicle,false),'test').purchase).toBeNull()});
+  it('accepts vehicle details and reports an unrecorded purchase as unknown',()=>{expect(vehicleSchema.parse(vehicle)).toEqual(vehicle);expect(report(dataset([],vehicle,false),'test').purchase).toBeNull()});
   it('rejects categories, impossible dates, negative prices and bad SoC',()=>{expect(()=>eventSchema.parse({...expense(),category:'misc'})).toThrow();expect(()=>eventSchema.parse({...expense(),date:'2024-02-30'})).toThrow();expect(()=>eventSchema.parse({...expense(),amount:-1})).toThrow();expect(()=>vehicleSchema.parse({...vehicle,initial_state:{odometer_km:0,soc_percent:101}})).toThrow()});
   it('rejects manual transaction IDs and invalid coverage',()=>{expect(()=>eventSchema.parse({...expense(),id:'manual'})).toThrow();expect(()=>eventSchema.parse({...expense(),coverage:{start:'2024-03-01',end:'2024-02-01'}})).toThrow()});
   it('rejects unknown vehicles and duplicate vehicle IDs',()=>{expect(()=>validateDataset(dataset([{...expense(),vehicle:'missing'}]))).toThrow('Unknown vehicle');const d=dataset();d.vehicles.push(vehicle);expect(()=>validateDataset(d)).toThrow('Duplicate')});
@@ -86,9 +86,8 @@ describe('purchase transactions',()=>{
     expect(report(d,'second').purchase).toBeNull();
     expect(report(d,'second').gross).toBe(0);
   });
-  it('rejects duplicate purchases and legacy vehicle purchase blocks',()=>{
+  it('rejects duplicate purchases',()=>{
     expect(()=>validateDataset(dataset([purchase]))).toThrow('Duplicate purchase');
-    expect(()=>vehicleSchema.parse({...vehicle,purchase:{date:'2024-01-01',amount:30000,currency:'EUR'}})).toThrow();
   });
   it('rejects purchase coverage and unknown amounts',()=>{
     expect(()=>eventSchema.parse({...purchase,coverage:{start:'2024-01-01',end:'2025-01-01'}})).toThrow('coverage');
