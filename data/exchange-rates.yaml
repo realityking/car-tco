@@ -1,0 +1,4 @@
+# Foreign currency units per 1 EUR, keyed by payment month.
+# EUR is always 1. Missing required rates fail the build.
+# Example syntax only: "2026-11": { CZK: <actual monthly rate> }
+rates: {}

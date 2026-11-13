@@ -1,0 +1,3 @@
+# Synthetic rate illustrating the convention, not a historical reference rate.
+rates:
+  "2024-01": { CZK: 25 }

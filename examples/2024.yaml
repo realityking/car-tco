@@ -1,0 +1,48 @@
+# SYNTHETIC EXAMPLES ONLY. Adapt to actual records before using.
+events:
+  - vehicle: example-car
+    date: 2024-01-03
+    type: non_useful_mileage
+    reason: collection
+    km: 50
+  - vehicle: example-car
+    date: 2024-01-04 # payment date
+    type: expense
+    category: charging
+    amount: 250
+    currency: CZK
+    energy_kwh: 30
+    measurement: charger
+    occurred_on: 2024-01-03 # optional actual charging date
+  - vehicle: example-car
+    date: 2024-01-05
+    type: expense
+    category: charging
+    amount: 0 # genuinely free; null would mean unknown price
+    currency: EUR
+    energy_kwh: 15
+    measurement: battery
+  - vehicle: example-car
+    date: 2024-06-01
+    type: expense
+    category: insurance
+    amount: 600
+    currency: EUR
+    coverage: { start: 2024-07-01, end: 2025-06-30 }
+  - vehicle: example-car
+    date: 2024-07-01
+    type: income
+    category: thg
+    amount: 100
+    currency: EUR
+  - vehicle: example-car
+    date: 2024-07-02
+    type: income
+    category: employer_reimbursement
+    amount: 75
+    currency: EUR
+  - vehicle: example-car
+    date: 2024-12-01
+    type: odometer
+    odometer_km: 10000
+# A 2025-01-01 boundary reading belongs in data/events/2025.yaml.
