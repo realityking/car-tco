@@ -1,4 +1,7 @@
 # Foreign currency units per 1 EUR, keyed by payment month.
-# EUR is always 1. Missing required rates fail the build.
+# EUR is always 1. Missing months use an earlier rate with a warning.
+# Without any usable rate, affected transactions are excluded with a dashboard error.
 # Example syntax only: "2026-11": { CZK: <actual monthly rate> }
-rates: {}
+rates: {
+  "2026-10": { CZK: 24.367 }
+}

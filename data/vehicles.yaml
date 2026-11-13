@@ -2,10 +2,10 @@
 vehicles:
   - id: q6
     manufacturer: Audi
-    model: Q6 e-tron
+    model: Q6 Sportback e-tron
     first_registration: 2026-02-18
     registration: 2026-11-10
-    handover: 2026-11-10
+    handover: 2026-11-16
     initial_state:
       odometer_km: null
       soc_percent: null

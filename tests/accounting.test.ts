@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { annualShare, availableYears, mileage, preliminaryTCO, report, toEUR } from '../src/accounting/calculate';
+import { annualShare, convertToEUR, availableYears, mileage, preliminaryTCO, report, toEUR } from '../src/accounting/calculate';
 import { eventSchema, validateDataset, vehicleSchema, type Dataset, type Event, type Vehicle } from '../src/accounting/schema';
 import { missingCostEvent, reconcileSessions, type ImportedSession } from '../src/accounting/imports';
 
@@ -10,7 +10,7 @@ const dataset = (events:Event[]=[], v:Vehicle=structuredClone(vehicle), includeP
 
 describe('FX',()=>{
   it('converts foreign units per EUR and permits EUR without a rate',()=>{expect(toEUR(250,'CZK','2024-06-01',{'2024-06':{CZK:25}})).toBe(10);expect(toEUR(17,'EUR','2024-01-01',{})).toBe(17)});
-  it('uses exact payment month; never silently falls back',()=>{expect(()=>toEUR(100,'CZK','2024-07-01',{'2024-06':{CZK:25}})).toThrow('Missing FX');expect(toEUR(0,'CZK','2024-07-01',{})).toBe(0)});
+  it('uses an earlier month when needed and supports free charging without FX',()=>{expect(toEUR(100,'CZK','2024-07-01',{'2024-06':{CZK:25}})).toBe(4);expect(toEUR(0,'CZK','2024-07-01',{})).toBe(0)});
 });
 describe('annual allocation',()=>{
   const e={date:'2023-12-01',coverage:{start:'2023-07-01',end:'2024-06-30'}};
@@ -98,5 +98,81 @@ describe('purchase transactions',()=>{
   it('rejects a sale preceding the purchase contract',()=>{
     const v={...vehicle,handover:null,sale:{date:'2023-12-01',amount:20000,currency:'EUR',odometer_km:null,soc_percent:null}};
     expect(()=>validateDataset(dataset([],v))).toThrow('Sale precedes purchase');
+  });
+});
+
+describe('transaction overview',()=>{
+  it('preserves notes on expense and income rows without changing totals',()=>{
+    const note='Collection journey\nReceipt <123> & taxi';
+    const events:Event[]=[expense({note}),{vehicle:'test',type:'income',category:'thg',date:'2024-06-02',amount:20,currency:'EUR',note:'Annual payment'}];
+    const r=report(dataset(events),'test');
+    expect(r.ledger.find(e=>e.label==='charging')?.note).toBe(note);
+    expect(r.ledger.find(e=>e.label==='thg')?.note).toBe('Annual payment');
+    expect(r.ledger.find(e=>e.label==='purchase')?.note).toBeUndefined();
+    expect(r.netVehicle).toBe(30080);
+  });
+  it('groups acquisition expenses outside operating costs',()=>{
+    const events=[expense({category:'acquisition',amount:40,energy_kwh:undefined,measurement:undefined}),expense({category:'acquisition',amount:10,energy_kwh:undefined,measurement:undefined})];
+    const r=report(validateDataset(dataset(events)),'test');
+    expect(r.acquisition).toBe(50);
+    expect(r.operating).toBe(0);
+    expect(r.gross).toBe(30050);
+    expect(r.breakdown.acquisition).toBe(50);
+    expect(r.ledger.filter(e=>e.label==='acquisition')).toHaveLength(2);
+  });
+});
+
+describe('non-blocking FX',()=>{
+  it('prefers the exact month, otherwise the nearest earlier rate for that currency',()=>{
+    const rates={'2024-07':{CZK:30},'2023-12':{CZK:20},'2024-05':{USD:2},'2024-03':{CZK:25}};
+    expect(convertToEUR(100,'CZK','2024-07-02',rates)).toMatchObject({eur:100/30,status:'exact',rateMonth:'2024-07'});
+    expect(convertToEUR(100,'CZK','2024-06-02',rates)).toMatchObject({eur:4,status:'fallback',requestedMonth:'2024-06',rateMonth:'2024-03'});
+    expect(convertToEUR(100,'CZK','2024-01-02',rates)).toMatchObject({eur:5,status:'fallback',rateMonth:'2023-12'});
+  });
+  it('never uses future months or another currency and does not throw',()=>{
+    expect(convertToEUR(100,'CZK','2024-06-01',{'2024-07':{CZK:25},'2024-05':{USD:1}})).toMatchObject({eur:null,status:'missing',rateMonth:null});
+    expect(toEUR(100,'GBP','2024-06-01',{})).toBeNull();
+    expect(convertToEUR(0,'GBP','2024-06-01',{}).status).toBe('exact');
+  });
+  it('allocates fallback EUR using coverage but resolves FX from payment date',()=>{
+    const d=dataset([expense({amount:250,currency:'CZK',coverage:{start:'2024-12-31',end:'2025-01-01'}})]);
+    d.rates={'2024-05':{CZK:25},'2025-01':{CZK:50}};
+    const r=report(d,'test',2025);
+    expect(r.operating).toBe(5);
+    expect(r.fxIssues).toHaveLength(1);
+    expect(r.ledger[0].fx).toMatchObject({status:'fallback',rateMonth:'2024-05'});
+    expect(report(d,'test',2025,'cash').fxIssues).toEqual([]);
+  });
+  it('excludes unavailable FX from expenses, income and energy but retains ledger rows',()=>{
+    const d=dataset([expense({currency:'GBP',energy_kwh:500}),expense({amount:20,energy_kwh:100}),{vehicle:'test',type:'income',category:'thg',date:'2024-06-01',currency:'GBP',amount:30},{vehicle:'test',type:'income',category:'employer_reimbursement',date:'2024-06-01',currency:'GBP',amount:40}]);
+    const r=report(d,'test');
+    expect(r.missingFX).toBe(3);expect(r.unknownPrices).toBe(0);
+    expect(r.operating).toBe(20);expect(r.thg).toBe(0);expect(r.reimbursements).toBe(0);expect(r.gross).toBe(30020);
+    expect(r.energy.kwh).toBe(100);expect(r.energy.sessions).toBe(1);expect(r.energy.averagePrice).toBe(.2);expect(r.energy.excludedCharging).toBe(1);
+    expect(r.ledger.filter(e=>e.fx?.status==='missing')).toHaveLength(3);
+    expect(r.ledger.filter(e=>e.fx?.status==='missing').every(e=>e.eur===null && e.allocated===null)).toBe(true);
+    expect(preliminaryTCO(d,'test',20000)).toBeNull();
+  });
+  it('keeps unknown-price energy and free charging separate from FX errors',()=>{
+    const r=report(dataset([expense({amount:null,currency:'GBP',energy_kwh:10}),expense({amount:0,currency:'GBP',energy_kwh:15})]),'test');
+    expect(r.missingFX).toBe(0);expect(r.unknownPrices).toBe(1);expect(r.energy.kwh).toBe(25);expect(r.energy.averagePrice).toBe(0);
+  });
+  it('handles missing purchase and sale FX without losing recorded lifecycle data',()=>{
+    const d=dataset([{...purchase,currency:'GBP'}],vehicle,false);
+    const r=report(d,'test');expect(r.hasPurchase).toBe(true);expect(r.purchase).toBeNull();expect(r.gross).toBe(0);expect(r.missingFX).toBe(1);
+    d.vehicles[0]={...vehicle,sale:{date:'2025-01-01',amount:20000,currency:'USD',odometer_km:11000,soc_percent:30}};
+    const sold=report(d,'test');expect(sold.sale).toBeNull();expect(sold.realized).toBeNull();expect(sold.missingFX).toBe(2);
+    d.rates={'2023-12':{GBP:1,USD:1}};
+    const converted=report(d,'test');expect(converted.realized).toBe(10000);expect(converted.fxIssues.every(i=>i.status==='fallback')).toBe(true);
+  });
+  it('reports energy-date exclusions even when payment is in another year',()=>{
+    const r=report(dataset([expense({currency:'GBP',occurred_on:'2023-12-31'})]),'test',2023);
+    expect(r.ledger).toEqual([]);expect(r.fxIssues).toHaveLength(1);expect(r.energy.kwh).toBe(0);
+  });
+  it('restores excluded records and replaces fallback rates after rates are added',()=>{
+    const d=dataset([expense({amount:100,currency:'GBP'})]);
+    expect(report(d,'test').operating).toBe(0);
+    d.rates={'2024-05':{GBP:2}};expect(report(d,'test').operating).toBe(50);expect(report(d,'test').fxIssues[0].status).toBe('fallback');
+    d.rates['2024-06']={GBP:4};expect(report(d,'test').operating).toBe(25);expect(report(d,'test').fxIssues).toEqual([]);
   });
 });

@@ -16,7 +16,7 @@ npm run preview
 
 `astro dev stop` stops the local development server when using Astro’s daemon mode.
 
-`npm run build` type-checks the application, validates all YAML and required FX rates, then produces a static `dist/`. Serve that folder with any static host. `npm ci` uses the committed lockfile for subsequent installs. The dashboard recalculates in the browser when you change vehicle, period, basis or the resale slider. Edit YAML and rebuild to update a deployed copy. Financial data is embedded in the static output; use a private hosting location if needed.
+`npm run build` type-checks the application, validates all YAML and the format of supplied FX rates, then produces a static `dist/`. Serve that folder with any static host. `npm ci` uses the committed lockfile for subsequent installs. The dashboard recalculates in the browser when you change vehicle, period, basis or the resale slider. Edit YAML and rebuild to update a deployed copy. Financial data is embedded in the static output; use a private hosting location if needed.
 
 ## Files and entry workflow
 
@@ -58,15 +58,15 @@ When migrating older data, move `purchase.amount` and `currency` into this event
 
 ## Financial events
 
-For expenses use `type: expense`, a fixed `category`, `amount`, `currency`, and `date` (payment date). Optional `note` is descriptive only. All expense categories are validated:
+For expenses use `type: expense`, a fixed `category`, `amount`, `currency`, and `date` (payment date). Optional `note` is displayed beneath the category in the transaction overview; it does not affect calculations. All expense categories are validated:
 
 | Group | Categories |
 | --- | --- |
 | Purchase | `purchase` |
-| Acquisition fees | `registration`, `acquisition_fees` |
+| Acquisition costs | `registration`, `acquisition` |
 | Operating | `charging`, `fuel`, `insurance`, `vehicle_tax`, `maintenance`, `repairs`, `inspection`, `tyres`, `parking`, `tolls`, `cleaning`, `accessories`, `subscriptions` |
 
-`registration` means initial acquisition registration costs. Put recurring vehicle tax in `vehicle_tax`. Gross amounts should include taxes you actually paid. The MVP does not model refundable deposits, financing principal/interest, refunds or partial purchase payments; do not force those into unrelated categories.
+`acquisition` covers incidental costs of acquiring the vehicle, such as collection travel or purchase-related fees; the vehicle price itself belongs in `purchase`. Acquisition costs are excluded from operating costs/km. `registration` means initial acquisition registration costs. Put recurring vehicle tax in `vehicle_tax`. Gross amounts should include taxes you actually paid. The MVP does not model refundable deposits, financing principal/interest, refunds or partial purchase payments; do not force those into unrelated categories.
 
 Income uses `type: income` with `category: thg` (vehicle-related) or `employer_reimbursement` (personal offset, always shown separately). No trip-level reimbursement attribution is needed.
 
@@ -74,7 +74,7 @@ Optional `coverage: { start: YYYY-MM-DD, end: YYYY-MM-DD }` allocates an expense
 
 ### FX
 
-Rates are **foreign currency units per 1 EUR**. An amount of 250 CZK with rate 25 becomes EUR 10. Use the event's **payment month**, even if its coverage belongs to another year. Purchase uses the transaction’s `date` (payment date). Sale uses its payment date override, or its date. EUR is implicitly 1; a zero-priced charge needs no exchange rate. Missing foreign rates fail the build rather than silently using a different month. Currency codes must be uppercase three-letter codes.
+Rates are **foreign currency units per 1 EUR**. An amount of 250 CZK with rate 25 becomes EUR 10. Use the event's **payment month**, even if its coverage belongs to another year. Purchase uses the transaction’s `date` (payment date). Sale uses its payment date override, or its date. EUR is implicitly 1; a zero-priced charge needs no exchange rate. If the payment month has no rate for the currency, the latest earlier available month is used and the dashboard shows a warning naming both months. Future rates are never used. If no usable rate exists, the build still succeeds: the transaction remains visible with an error and is excluded from all calculations, including charging energy and price/kWh metrics. Expense and income totals then describe only included records. Realized and preliminary TCO are withheld while any required FX rate is unavailable. Missing FX is distinct from an unknown charging price. Adding the monthly rate and rebuilding automatically replaces the fallback or restores excluded transactions. Currency codes must be uppercase three-letter codes.
 
 Maintain monthly source rates, not converted transaction amounts. Select a consistent monthly rate source/convention and document it in YAML comments. There is no automatic exchange-rate download in the MVP. Calculations preserve precision until display rounding to avoid cumulative rounding drift.
 
@@ -83,9 +83,9 @@ Maintain monthly source rates, not converted transaction amounts. Select a consi
 - **Gross recorded expenses** = purchase in period + acquisition fees + operating costs.
 - **Net vehicle expenses** = gross − THG income, before sale.
 - **Personal net expenses** = net vehicle expenses − employer reimbursements, before sale.
-- **Realized lifetime TCO** = actual purchase + acquisition + operating − THG − actual sale proceeds. Available only in Lifetime after sale with known purchase/sale prices and no recorded unknown charging prices. A separate figure includes employer reimbursements.
+- **Realized lifetime TCO** = actual purchase + acquisition + operating − THG − actual sale proceeds. Available only in Lifetime after sale with known purchase/sale prices and no recorded unknown charging prices or missing usable FX rates. A separate figure includes employer reimbursements.
 - Operating cost/km excludes purchase and acquisition. Gross operating costs are divided by total or useful distance; a separate net rate subtracts THG and reimbursements.
-- The optional resale slider estimates lifetime TCO using recorded-to-date costs and an assumed resale value. It is clearly hypothetical, does not write YAML or change actual totals, and does not forecast future operating costs. It is disabled without a known purchase price or with unknown charging prices.
+- The optional resale slider estimates lifetime TCO using recorded-to-date costs and an assumed resale value. It is clearly hypothetical, does not write YAML or change actual totals, and does not forecast future operating costs. It is disabled without a known purchase price or with unknown charging prices or missing usable FX rates.
 
 Totals are always based on recorded entries. The application cannot certify that every receipt, charge or reimbursement has been entered. Zero means no known amount in the selected view; missing prices and readings are explicitly marked. Annual views appear from dated source records and coverage periods, not the machine's current date.
 

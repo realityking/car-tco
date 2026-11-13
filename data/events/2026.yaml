@@ -6,3 +6,67 @@ events:
     category: purchase
     amount: 55800
     currency: EUR
+
+  - vehicle: q6
+    date: 2026-10-28
+    type: expense
+    category: accessories
+    amount: 1000
+    currency: EUR
+    note: 'Winter wheels'
+
+  - vehicle: q6
+    date: 2026-10-28
+    type: expense
+    category: acquisition
+    amount: 2224
+    currency: CZK
+    note: 'Bolt drive'
+
+  - vehicle: q6
+    date: 2026-10-28
+    type: expense
+    category: acquisition
+    amount: 1784
+    currency: CZK
+    note: 'Gas drive to Neumarkt'
+
+  - vehicle: q6
+    date: 2026-10-28
+    type: expense
+    category: acquisition
+    amount: 14.05
+    currency: EUR
+    note: 'Food drive to Neumarkt'
+
+  - vehicle: q6
+    date: 2026-11-08
+    type: expense
+    category: acquisition
+    amount: 2643
+    currency: CZK
+    note: '50% of flight to Düsseldorf'
+
+  - vehicle: q6
+    date: 2026-11-08
+    type: expense
+    category: acquisition
+    amount: 46
+    currency: CZK
+    note: 'Ticket to airport'
+
+  - vehicle: q6
+    date: 2026-11-03
+    type: expense
+    category: registration
+    amount: 2.60
+    currency: EUR
+    note: 'Wunschkennzeichen'
+
+  - vehicle: q6
+    date: 2026-11-03
+    type: expense
+    category: registration
+    amount: 20.88
+    currency: EUR
+    note: 'License plates'
