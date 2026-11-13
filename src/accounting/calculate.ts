@@ -66,14 +66,14 @@ export function report(data: Dataset, vehicleId: string, year: number | null = n
   const purchasedOn = purchaseEvent?.type === 'expense' ? purchaseEvent.purchase_date ?? purchaseEvent.date : null;
   const breakdown: Record<string,number> = {};
   let operating=0, acquisition=0, thg=0, reimbursements=0, unknownPrices=0;
-  const ledger: {date:string; label:string; note?:string; original:number|null; currency:string; eur:number|null; allocated:number|null; fx:FXConversion|null}[] = [];
+  const ledger: {date:string; label:string; note?:string; coverage?:{start:string; end:string}; original:number|null; currency:string; eur:number|null; allocated:number|null; fx:FXConversion|null}[] = [];
   for (const e of events) {
     if (e.type !== 'expense' && e.type !== 'income') continue;
     const share = annualShare(e,year,basis);
     if (!share) continue;
     const fx = conversions.get(e) ?? null;
     const eur = fx?.eur ?? null;
-    ledger.push({date:e.date,label:e.category,note:e.note,original:e.amount,currency:e.currency,eur,fx,allocated:eur === null ? null : eur*share});
+    ledger.push({date:e.date,label:e.category,note:e.note,coverage:e.coverage,original:e.amount,currency:e.currency,eur,fx,allocated:eur === null ? null : eur*share});
     if (eur === null) { if (e.amount === null) unknownPrices++; continue; }
     const amount = eur*share;
     if (e.type === 'income') { if (e.category === 'thg') thg+=amount; else reimbursements+=amount; }

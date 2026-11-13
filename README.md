@@ -64,10 +64,10 @@ For expenses use `type: expense`, a fixed `category`, `amount`, `currency`, and 
 | Group | Categories |
 | --- | --- |
 | Purchase | `purchase` |
-| Acquisition costs | `registration`, `acquisition` |
-| Operating | `charging`, `fuel`, `insurance`, `vehicle_tax`, `maintenance`, `repairs`, `inspection`, `tyres`, `parking`, `tolls`, `cleaning`, `accessories`, `subscriptions` |
+| Acquisition costs | `registration`, `acquisition`, `accessories` |
+| Operating | `charging`, `fuel`, `insurance`, `vehicle_tax`, `maintenance`, `repairs`, `inspection`, `tyres`, `parking`, `tolls`, `cleaning`, `subscriptions` |
 
-`acquisition` covers incidental costs of acquiring the vehicle, such as collection travel or purchase-related fees; the vehicle price itself belongs in `purchase`. Acquisition costs are excluded from operating costs/km. `registration` means initial acquisition registration costs. Put recurring vehicle tax in `vehicle_tax`. Gross amounts should include taxes you actually paid. The MVP does not model refundable deposits, financing principal/interest, refunds or partial purchase payments; do not force those into unrelated categories.
+`acquisition` covers incidental costs of acquiring the vehicle, such as collection travel or purchase-related fees; the vehicle price itself belongs in `purchase`. Accessories remain a separate category in the breakdown and count toward acquisition costs and TCO, even when bought after handover. Acquisition costs are excluded from operating costs/km. `registration` means initial acquisition registration costs. Put recurring vehicle tax in `vehicle_tax`. Gross amounts should include taxes you actually paid. The MVP does not model refundable deposits, financing principal/interest, refunds or partial purchase payments; do not force those into unrelated categories.
 
 Income uses `type: income` with `category: thg` (vehicle-related) or `employer_reimbursement` (personal offset, always shown separately). No trip-level reimbursement attribution is needed.
 
@@ -97,6 +97,8 @@ Use `type: odometer` with `date` and `odometer_km`. Use `type: non_useful_mileag
 Total km = closing − opening odometer. Useful km = total − non-useful km. Lifecycle handover/sale readings are included automatically. For annual reports record exact **January 1 boundary readings**; the reading on 2025-01-01 closes 2024 and opens 2025. For the first/last ownership year the handover/sale is the boundary. An ongoing period uses the latest available reading, and the UI shows its measurement window. There is no interpolation. If a boundary is missing, per-km metrics remain unavailable. Update readings through the costs' reporting horizon for meaningful comparisons. A zero denominator gives no ratio; excessive excluded mileage is flagged. Decreasing or conflicting same-day readings fail validation.
 
 ## Charging and energy
+
+Use `category: subscriptions` for charging-card membership or monthly tariff fees. These count toward operating costs and TCO, but are not charging sessions, require no kWh, and are excluded from the session-based average price/kWh. Use `category: charging` for actual charging sessions. Add a coverage period to subscription fees when its dates are known.
 
 Charging expenses optionally include `energy_kwh`, `measurement: charger | battery | unknown`, and `occurred_on` (session date). Financial allocation uses payment/coverage; energy aggregation uses session date, falling back to payment date. Record free charging with `amount: 0`. `amount: null` is permitted only for charging and means **unknown price**, never free. Such entries contribute known energy but are flagged as missing financial costs.
 

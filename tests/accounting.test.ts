@@ -175,3 +175,28 @@ describe('non-blocking FX',()=>{
     d.rates['2024-06']={GBP:4};expect(report(d,'test').operating).toBe(25);expect(report(d,'test').fxIssues).toEqual([]);
   });
 });
+
+it('includes accessories in acquisition and TCO, excluding them from operating cost/km',()=>{
+  const events:Event[]=[
+    expense({category:'accessories',amount:200,energy_kwh:undefined,measurement:undefined}),
+    expense({amount:100}),
+    {vehicle:'test',type:'odometer',date:'2025-01-01',odometer_km:2000},
+    {vehicle:'test',type:'non_useful_mileage',date:'2024-06-01',reason:'service',km:200},
+  ];
+  const sold={...vehicle,sale:{date:'2025-01-01',amount:20000,currency:'EUR',odometer_km:2000,soc_percent:30}};
+  const d=dataset(events,sold);
+  for (const basis of ['cash','accrual'] as const) {
+    for (const year of [null,2024]) {
+      const r=report(d,'test',year,basis);
+      expect(r.acquisition).toBe(200);
+      expect(r.operating).toBe(100);
+      expect(r.breakdown.accessories).toBe(200);
+      expect(r.gross).toBe(30300);
+      expect(r.operatingPerTotal).toBe(.1);
+      expect(r.operatingPerUseful).toBe(.125);
+      expect(r.netOperatingPerUseful).toBe(.125);
+    }
+  }
+  expect(report(d,'test').realized).toBe(10300);
+  expect(preliminaryTCO(dataset(events),'test',20000)).toBe(10300);
+});
