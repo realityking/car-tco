@@ -1,6 +1,6 @@
 import { groupBreakdown } from './accounting/breakdown';
 import { fxNotices } from './accounting/fx-notices';
-import { availableYears, preliminaryTCO, report, type Basis } from './accounting/calculate';
+import { availableYears, preliminaryTCO, ratio, report, type Basis } from './accounting/calculate';
 import type { Dataset } from './accounting/schema';
 const data: Dataset = JSON.parse(document.querySelector('#dataset')!.textContent!);
 const $ = <T extends Element = HTMLElement>(q:string) => document.querySelector<T>(q)!;
@@ -40,10 +40,14 @@ function render() {
     ${fxWarnings.length?`<details class="notice" open><summary>FX warnings · earlier rates used</summary><ul>${fxWarnings.map(issue=>`<li>${escape(issue.message)}</li>`).join('')}</ul></details>`:''}
     ${fxErrors.length?`<section class="notice fx-error" role="alert"><strong>FX errors · totals are incomplete</strong><ul>${fxErrors.map(issue=>`<li>${escape(issue.message)}</li>`).join('')}</ul><p>Add a usable rate in exchange-rates.yaml and rebuild to include these records.</p></section>`:''}
     <section class="metrics" aria-label="Cost summary">
+      ${metric('Operating / useful km',money(r.operatingPerUseful,2),'Gross operating costs ÷ useful distance',true)}
+      ${metric('Operating / total km',money(r.operatingPerTotal,2),'Gross operating costs ÷ total distance',true)}
+      ${metric('Net cost / useful km',money(ratio(r.netVehicle,d.useful),2),'Net vehicle expenses ÷ useful distance · before sale',true)}
+      ${metric('Net cost / total km',money(ratio(r.netVehicle,d.total),2),'Net vehicle expenses ÷ total distance · before sale',true)}
       ${metric(basis==='accrual'?'Gross accrued expenses':'Gross recorded expenses',money(r.gross),'Purchase + acquisition + operating')}
       ${metric('Net vehicle expenses',money(r.netVehicle),'After THG income · before sale')}
       ${metric('Personal net expenses',money(r.netPersonal),'After employer reimbursements · before sale')}
-      ${metric('Operating / useful km',money(r.operatingPerUseful,2),'Gross operating costs ÷ useful distance',true)}
+      ${metric('Charged energy / 100 km',number(e.per100,1)+' kWh','Recorded charged energy ÷ total distance × 100')}
     </section>
     <section class="two-columns" id="costs"><article class="panel"><div class="section-heading"><div><p class="eyebrow">WHERE IT GOES</p><h2>Cost breakdown</h2></div><span class="tag">EUR</span></div>
     ${groups.length?`<div class="bars">${groups.map(group=>{
