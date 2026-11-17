@@ -24,7 +24,7 @@ describe('annual allocation',()=>{
 describe('financial separation and TCO',()=>{
   const events:Event[]=[expense(),expense({category:'registration',amount:50,energy_kwh:undefined,measurement:undefined}),{vehicle:'test',type:'income',category:'thg',date:'2024-06-01',amount:30,currency:'EUR'},{vehicle:'test',type:'income',category:'employer_reimbursement',date:'2024-06-01',amount:20,currency:'EUR'}];
   it('separates operating, acquisition, THG and employer money',()=>{const r=report(dataset(events),'test');expect(r.operating).toBe(100);expect(r.acquisition).toBe(50);expect(r.gross).toBe(30150);expect(r.netVehicle).toBe(30120);expect(r.netPersonal).toBe(30100);expect(r.realized).toBeNull()});
-  it('uses purchase payment date without depreciating',()=>{expect(report(dataset(events),'test',2023).purchaseInPeriod).toBe(0);expect(report(dataset(events),'test',2024).purchaseInPeriod).toBe(30000)});
+  it('uses purchase payment date in cash reporting',()=>{expect(report(dataset(events),'test',2023).purchaseInPeriod).toBe(0);expect(report(dataset(events),'test',2024,'cash').purchaseInPeriod).toBe(30000)});
   it('only recognizes realized lifetime TCO after sale',()=>{const v={...vehicle,closing_state:{odometer_km:11000,soc_percent:30}};const r=report(dataset([...events,sale],v),'test');expect(r.realized).toBe(10120);expect(r.realizedPersonal).toBe(10100);expect(report(dataset([...events,sale],v),'test',2024).realized).toBeNull()});
   it('keeps hypothetical resale out of actual totals',()=>{const d=dataset(events);expect(preliminaryTCO(d,'test',20000)).toBe(10120);expect(report(d,'test').netVehicle).toBe(30120);expect(()=>preliminaryTCO(d,'test',-1)).toThrow()});
   it('does not fabricate unknown purchase or charging amounts',()=>{const d=dataset([expense({amount:null})],vehicle,false);const r=report(d,'test');expect(r.purchase).toBeNull();expect(r.unknownPrices).toBe(1);expect(r.ledger[0].eur).toBeNull();expect(preliminaryTCO(d,'test',0)).toBeNull()});
@@ -94,10 +94,10 @@ describe('purchase transactions',()=>{
   it('converts purchases using payment-month FX for both bases',()=>{
     const d=dataset([{...purchase,date:'2024-06-01',amount:750000,currency:'CZK'}],vehicle,false);
     for (const basis of ['cash','accrual'] as const) {
-      expect(report(d,'test',2024,basis).purchaseInPeriod).toBe(30000);
+      expect(report(d,'test',2024,basis,'2024-12-31').purchaseInPeriod).toBe(30000);
       expect(report(d,'test',2023,basis).gross).toBe(0);
     }
-    expect(availableYears(d)).toEqual([2024]);
+    expect(availableYears(d,'2024-12-31')).toEqual([2024]);
   });
   it('keeps an explicitly zero-priced acquisition distinct from a missing purchase',()=>{
     expect(report(dataset([{...purchase,amount:0}],vehicle,false),'test').purchase).toBe(0);
@@ -214,7 +214,7 @@ it('includes accessories in acquisition and TCO, excluding them from operating c
       expect(r.acquisition).toBe(200);
       expect(r.operating).toBe(100);
       expect(r.breakdown.accessories).toBe(200);
-      expect(r.gross).toBe(30300);
+      expect(r.gross).toBeCloseTo(basis === 'accrual' && year === 2024 ? 300+30000*366/367 : 30300);
       expect(r.operatingPerTotal).toBe(.1);
       expect(r.operatingPerUseful).toBe(.125);
       expect(r.netOperatingPerUseful).toBe(.125);
@@ -278,5 +278,97 @@ describe('charging providers and type',()=>{
   });
   it('preserves provider and charging type details through import conversion',()=>{
     expect(missingCostEvent({vehicle:'test',source:'export',source_record:'providers',date:'2024-06-01',energy_kwh:23.47,measurement:'charger',...details})).toMatchObject({...details,amount:null});
+  });
+});
+
+describe('elapsed coverage accrual',()=>{
+  const insurance = expense({category:'insurance',amount:366,energy_kwh:undefined,measurement:undefined,coverage:{start:'2024-01-01',end:'2024-12-31'}});
+  it('counts only elapsed inclusive days, with zero before coverage and full cost after it',()=>{
+    for (const [asOf, days] of [['2023-12-31',0],['2024-01-01',1],['2024-02-29',60],['2024-12-31',366],['2025-01-01',366]] as const) {
+      expect(annualShare(insurance,null,'accrual',asOf)).toBe(days/366);
+      expect(annualShare(insurance,2024,'accrual',asOf)).toBe(days/366);
+    }
+    const single = {...insurance,coverage:{start:'2024-02-29',end:'2024-02-29'}};
+    expect(annualShare(single,null,'accrual','2024-02-28')).toBe(0);
+    expect(annualShare(single,null,'accrual','2024-02-29')).toBe(1);
+  });
+  it('splits cross-year coverage without accruing future days or changing cash',()=>{
+    const e = {...insurance,coverage:{start:'2023-12-31',end:'2024-01-02'}};
+    expect(annualShare(e,2023,'accrual','2024-01-01')).toBe(1/3);
+    expect(annualShare(e,2024,'accrual','2024-01-01')).toBe(1/3);
+    expect(annualShare(e,null,'accrual','2024-01-01')).toBe(2/3);
+    expect(annualShare(e,2025,'accrual','2024-01-01')).toBe(0);
+    expect(annualShare(e,null,'cash','2024-01-01')).toBe(1);
+    expect(annualShare(e,2024,'cash','2024-01-01')).toBe(1);
+  });
+  it('propagates accrued costs to the ledger, totals, per-km costs and resale scenario',()=>{
+    const d = dataset([insurance,{vehicle:'test',type:'odometer',date:'2024-02-29',odometer_km:1100}]);
+    const r = report(d,'test',null,'accrual','2024-02-29');
+    expect(r.operating).toBeCloseTo(60);
+    expect(r.gross).toBe(30060);
+    expect(r.breakdown.insurance).toBeCloseTo(60);
+    expect(r.operatingPerTotal).toBeCloseTo(.6);
+    expect(r.ledger.find(l=>l.label==='insurance')).toMatchObject({original:366,eur:366,allocated:expect.closeTo(60)});
+    expect(preliminaryTCO(d,'test',20000,'accrual','2024-02-29')).toBe(10060);
+    expect(preliminaryTCO(d,'test',20000,'cash','2024-02-29')).toBe(10366);
+    expect(report(d,'test',null,'cash','2024-02-29').operating).toBe(366);
+  });
+  it('keeps future prepaid entries and missing FX errors visible',()=>{
+    const d = dataset([{...insurance,coverage:{start:'2025-01-01',end:'2025-12-31'}}]);
+    const r = report(d,'test',null,'accrual','2024-12-31');
+    expect(r.operating).toBe(0);
+    expect(r.ledger.find(l=>l.label==='insurance')).toMatchObject({original:366,allocated:0});
+    const missing = report(dataset([{...insurance,currency:'GBP'}]),'test',null,'accrual','2023-12-31');
+    expect(missing.missingFX).toBe(1);
+    expect(missing.ledger.find(l=>l.label==='insurance')?.allocated).toBeNull();
+  });
+  it('prorates covered income consistently and uses payment-month FX before allocation',()=>{
+    const d = dataset([{...insurance,amount:9150,currency:'CZK'},{vehicle:'test',type:'income',category:'employer_reimbursement',date:'2024-06-01',amount:183,currency:'EUR',coverage:insurance.coverage}]);
+    const r = report(d,'test',null,'accrual','2024-02-29');
+    expect(r.operating).toBeCloseTo(60);
+    expect(r.reimbursements).toBeCloseTo(30);
+    expect(r.netPersonal).toBe(30030);
+  });
+});
+
+
+describe('purchase allocation over elapsed ownership',()=>{
+  it('reallocates prior years daily and reconciles annual shares to Lifetime',()=>{
+    const d = dataset();
+    const first = report(d,'test',2024,'accrual','2024-12-31');
+    const later = report(d,'test',2024,'accrual','2025-12-31');
+    const second = report(d,'test',2025,'accrual','2025-12-31');
+    expect(first.purchaseInPeriod).toBe(30000);
+    expect(later.purchaseInPeriod).toBeCloseTo(30000*366/731);
+    expect(second.purchaseInPeriod).toBeCloseTo(30000*365/731);
+    expect(later.purchaseInPeriod!+second.purchaseInPeriod!).toBeCloseTo(report(d,'test',null,'accrual','2025-12-31').purchase!);
+    expect(second.breakdown.purchase).toBe(second.purchaseInPeriod);
+    expect(second.ledger.find(l=>l.label==='purchase')).toMatchObject({original:30000,eur:30000,allocated:second.purchaseInPeriod});
+    expect(report(d,'test',2025,'cash','2025-12-31').purchaseInPeriod).toBe(0);
+    expect(report(d,'test',2024,'cash','2025-12-31').purchaseInPeriod).toBe(30000);
+    expect(availableYears(d,'2026-01-01')).toEqual([2026,2025,2024]);
+  });
+  it('uses handover rather than payment and handles one-day ownership and future years',()=>{
+    const d = dataset([], {...vehicle,handover:'2024-12-31'});
+    expect(report(d,'test',2024,'accrual','2024-12-31').purchaseInPeriod).toBe(30000);
+    expect(report(d,'test',2024,'accrual','2025-01-01').purchaseInPeriod).toBe(15000);
+    expect(report(d,'test',2025,'accrual','2025-01-01').purchaseInPeriod).toBe(15000);
+    expect(report(d,'test',2026,'accrual','2025-01-01').purchaseInPeriod).toBe(0);
+    expect(report(d,'test',2024,'accrual','2024-12-30').purchaseInPeriod).toBe(0);
+    expect(report(dataset([], {...vehicle,handover:null}),'test',2024,'accrual','2025-01-01').purchaseInPeriod).toBe(30000);
+  });
+  it('freezes allocations at sale without changing realized lifetime TCO',()=>{
+    const d = dataset([sale]);
+    expect(report(d,'test',2024,'accrual','2025-01-01').purchaseInPeriod).toBeCloseTo(30000*366/367);
+    expect(report(d,'test',2024,'accrual','2030-01-01').purchaseInPeriod).toBeCloseTo(30000*366/367);
+    expect(report(d,'test',null,'accrual','2030-01-01').realized).toBe(10000);
+    expect(availableYears(d,'2030-01-01')).toEqual([2025,2024]);
+  });
+  it('retains missing FX errors in allocated years and converts at payment before allocation',()=>{
+    const d = dataset([{...purchase,currency:'GBP',amount:60000}],vehicle,false);
+    expect(report(d,'test',2025,'accrual','2025-12-31').purchaseInPeriod).toBeNull();
+    expect(report(d,'test',2025,'accrual','2025-12-31').missingFX).toBe(1);
+    d.rates={'2024-01':{GBP:2},'2025-12':{GBP:4}};
+    expect(report(d,'test',2025,'accrual','2025-12-31').purchaseInPeriod).toBeCloseTo(30000*365/731);
   });
 });
