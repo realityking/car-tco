@@ -34,13 +34,13 @@ export function mileage(v: Vehicle, events: Event[], year: number | null) {
   const saleEvent = events.find(e => e.vehicle === v.id && e.type === 'income' && e.category === 'sale');
   const soldOn = saleEvent?.type === 'income' ? saleEvent.sale_date ?? saleEvent.date : null;
   const points = events.filter((e): e is Extract<Event, {type:'odometer'}> => e.vehicle === v.id && e.type === 'odometer').map(e => ({date:e.date, km:e.odometer_km}));
-  if (v.handover && v.initial_state.odometer_km !== null) points.push({date:v.handover, km:v.initial_state.odometer_km});
+  if (v.handover && v.initial_state.odometer_km !== null) points.unshift({date:v.handover, km:v.initial_state.odometer_km});
   if (soldOn && v.closing_state?.odometer_km != null) points.push({date:soldOn, km:v.closing_state.odometer_km});
   points.sort((a,b) => a.date.localeCompare(b.date));
   const latest = points.at(-1);
   const start = year === null ? v.handover : (v.handover && v.handover > `${year}-01-01` ? v.handover : `${year}-01-01`);
   const end = year === null ? (soldOn ?? latest?.date) : [soldOn, latest?.date, `${year+1}-01-01`].filter((d):d is string => !!d).sort()[0];
-  const first = points.find(p => p.date === start), last = points.find(p => p.date === end);
+  const first = points.find(p => p.date === start), last = [...points].reverse().find(p => p.date === end);
   const total = first && last && end && start && end >= start ? last.km - first.km : null;
   const excluded = events.filter(e => e.vehicle === v.id && e.type === 'non_useful_mileage' && start && end && e.date >= start && e.date <= end && (year === null || e.date.startsWith(`${year}-`))).reduce((s,e) => s + (e.type === 'non_useful_mileage' ? e.km : 0),0);
   const useful = total === null || excluded > total ? null : total - excluded;

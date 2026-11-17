@@ -44,6 +44,27 @@ describe('energy',()=>{
   it('withholds inventory estimate with missing kWh or closing SoC',()=>{expect(report(dataset([expense()]),'test').energy.adjusted).toBeNull();const v={...vehicle,closing_state:{odometer_km:11000,soc_percent:30}};expect(report(dataset([expense({energy_kwh:undefined}),sale],v),'test').energy.adjusted).toBeNull()});
 });
 describe('validation',()=>{
+  it('counts collection mileage after handover on the same day',()=>{
+    const events: Event[] = [
+      {vehicle:'test',type:'odometer',date:'2024-01-01',odometer_km:1292},
+      {vehicle:'test',type:'non_useful_mileage',date:'2024-01-01',reason:'collection',km:292},
+    ];
+    const data = validateDataset(dataset(events));
+    for (const year of [null, 2024]) {
+      expect(mileage(data.vehicles[0],data.events,year)).toMatchObject({total:292,excluded:292,useful:0,invalid:false});
+    }
+    events.push({vehicle:'test',type:'odometer',date:'2024-01-02',odometer_km:1400});
+    expect(mileage(vehicle,events,null).total).toBe(400);
+  });
+  it('still rejects a first-day reading below handover and conflicting event readings',()=>{
+    const reading = (date:string, odometer_km:number): Event => ({vehicle:'test',type:'odometer',date,odometer_km});
+    for (const events of [
+      [reading('2024-01-01',999)],
+      [reading('2024-01-01',1200),reading('2024-01-01',1300)],
+      [reading('2024-01-02',1200),reading('2024-01-02',1300)],
+      [reading('2024-01-01',1300),reading('2024-01-02',1200)],
+    ]) expect(()=>validateDataset(dataset(events))).toThrow('Inconsistent odometer');
+  });
   it('accepts vehicle details and reports an unrecorded purchase as unknown',()=>{expect(vehicleSchema.parse(vehicle)).toEqual(vehicle);expect(report(dataset([],vehicle,false),'test').purchase).toBeNull()});
   it('rejects categories, impossible dates, negative prices and bad SoC',()=>{expect(()=>eventSchema.parse({...expense(),category:'misc'})).toThrow();expect(()=>eventSchema.parse({...expense(),date:'2024-02-30'})).toThrow();expect(()=>eventSchema.parse({...expense(),amount:-1})).toThrow();expect(()=>vehicleSchema.parse({...vehicle,initial_state:{odometer_km:0,soc_percent:101}})).toThrow()});
   it('rejects manual transaction IDs and invalid coverage',()=>{expect(()=>eventSchema.parse({...expense(),id:'manual'})).toThrow();expect(()=>eventSchema.parse({...expense(),coverage:{start:'2024-03-01',end:'2024-02-01'}})).toThrow()});

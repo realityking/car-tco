@@ -127,6 +127,16 @@ events:
     currency: EUR
     note: "Luggage net, steel pedals"
 
+  - vehicle: q6
+    date: 2026-11-16
+    type: odometer
+    odometer_km: 16356
+
+  - vehicle: q6
+    date: 2026-11-16
+    type: non_useful_mileage
+    km: 292
+    reason: collection
   
   - vehicle: q6
     date: 2026-11-18

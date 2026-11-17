@@ -64,11 +64,13 @@ export function validateDataset(data: Dataset): Dataset {
     if (soldOn && v.handover && soldOn < v.handover) throw new Error(`Sale precedes handover: ${v.id}`);
     if (v.closing_state && !soldOn) throw new Error(`Closing state requires a sale transaction: ${v.id}`);
     const readings = events.filter((e): e is Extract<Event, {type:'odometer'}> => e.vehicle === v.id && e.type === 'odometer').map(e => ({date:e.date, km:e.odometer_km}));
-    if (v.handover && v.initial_state.odometer_km !== null) readings.push({date:v.handover, km:v.initial_state.odometer_km});
+    const initialReading = v.handover && v.initial_state.odometer_km !== null ? {date:v.handover, km:v.initial_state.odometer_km} : null;
+    // Handover precedes any later measurement taken on the first ownership day.
+    if (initialReading) readings.unshift(initialReading);
     if (soldOn && v.closing_state?.odometer_km != null) readings.push({date:soldOn, km:v.closing_state.odometer_km});
     readings.sort((a,b) => a.date.localeCompare(b.date));
     for (let i=1; i<readings.length; i++) {
-      if (readings[i].km < readings[i-1].km || (readings[i].date === readings[i-1].date && readings[i].km !== readings[i-1].km)) throw new Error(`Inconsistent odometer for ${v.id}`);
+      if (readings[i].km < readings[i-1].km || (readings[i].date === readings[i-1].date && readings[i].km !== readings[i-1].km && readings[i-1] !== initialReading)) throw new Error(`Inconsistent odometer for ${v.id}`);
     }
     for (const e of events.filter(e => e.vehicle === v.id && (e.type === 'odometer' || e.type === 'non_useful_mileage'))) {
       if (!v.handover || e.date < v.handover || (soldOn && e.date > soldOn)) throw new Error(`Mileage outside ownership: ${v.id} ${e.date}`);
