@@ -18,9 +18,14 @@ export const vehicleSchema = z.object({
 });
 const coverage = z.object({ start: date, end: date }).strict().refine(v => v.end >= v.start, 'Coverage end precedes start');
 const base = { vehicle: z.string(), date, note: z.string().optional() };
+export const chargingDetails = {
+  card_provider: z.string().trim().min(1).optional(),
+  charger_provider: z.string().trim().min(1).optional(),
+  charging_type: z.enum(['AC', 'DC']).optional(),
+};
 const expense = z.object({
-  ...base, type: z.literal('expense'), category: z.enum(categories), amount: positive.nullable(), currency,
-  purchase_date: date.optional(), coverage: coverage.optional(), occurred_on: date.optional(), energy_kwh: positive.optional(),
+  ...base, ...chargingDetails, type: z.literal('expense'), category: z.enum(categories), amount: positive.nullable(), currency,
+  purchase_date: date.optional(), coverage: coverage.optional(), occurred_on: date.optional(), energy_kwh: positive.optional(), duration_minutes: positive.optional(),
   measurement: z.enum(['charger', 'battery', 'unknown']).optional(),
   source: z.string().optional(), source_record: z.string().optional(),
 }).strict();
@@ -36,7 +41,7 @@ export const eventSchema = z.discriminatedUnion('type', [expense, income, odomet
   if (e.category === 'purchase' && e.coverage) ctx.addIssue({ code: 'custom', message: 'Purchase is recognized at payment; coverage is not supported' });
   if (e.category !== 'purchase' && e.purchase_date) ctx.addIssue({ code: 'custom', message: 'purchase_date belongs to purchase only' });
   if (e.amount === null && e.category !== 'charging') ctx.addIssue({ code: 'custom', message: 'Only charging can have an unknown price' });
-  if (e.category !== 'charging' && (e.energy_kwh !== undefined || e.measurement || e.occurred_on)) ctx.addIssue({ code: 'custom', message: 'Energy fields belong to charging only' });
+  if (e.category !== 'charging' && (e.energy_kwh !== undefined || e.duration_minutes !== undefined || e.card_provider !== undefined || e.charger_provider !== undefined || e.charging_type !== undefined || e.measurement || e.occurred_on)) ctx.addIssue({ code: 'custom', message: 'Charging session fields belong to charging only' });
 });
 export const ratesSchema = z.record(z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/), z.record(currency, z.number().positive())).superRefine((rates, ctx) => {
   for (const month of Object.values(rates)) if (month.EUR !== undefined && month.EUR !== 1) ctx.addIssue({ code: 'custom', message: 'EUR rate must equal 1' });

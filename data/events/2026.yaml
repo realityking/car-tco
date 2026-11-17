@@ -137,9 +137,38 @@ events:
     type: non_useful_mileage
     km: 292
     reason: collection
+
+  - vehicle: q6
+    date: 2026-11-16
+    type: expense
+    category: charging
+    amount: null
+    currency: CZK
+    energy_kwh: 13.79
+    duration_minutes: 75
+    card_provider: PRE
+    charger_provider: PRE
+    charging_type: AC
+
+  - vehicle: q6
+    date: 2026-11-17
+    type: odometer
+    odometer_km: 16365
+
+  - vehicle: q6
+    date: 2026-11-17
+    type: expense
+    category: charging
+    amount: null
+    currency: CZK
+    energy_kwh: 45.54
+    duration_minutes: 249
+    card_provider: PRE
+    charger_provider: PRE
+    charging_type: AC
   
   - vehicle: q6
-    date: 2026-11-18
+    date: 2026-11-21
     type: expense
     category: insurance
     amount: 2131.43

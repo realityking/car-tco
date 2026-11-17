@@ -1,7 +1,11 @@
 import type { FXIssue } from './calculate';
 
 /** One notice per currency, regardless of how many transactions need that rate. */
-export function fxNotices(issues: FXIssue[]) {
+export function fxNotices(issues: FXIssue[], now = new Date()) {
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  // The current month's final rate may not be available yet. A usable fallback
+  // is expected; impossible conversions must still surface as errors.
+  issues = issues.filter(i => i.status !== 'fallback' || i.requestedMonth !== currentMonth);
   const currencies = [...new Set(issues.filter(i => i.status !== 'exact').map(i => i.currency))].sort();
   return currencies.map(currency => {
     const matching = issues.filter(i => i.currency === currency);

@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { date, type Expense } from './schema';
+import { chargingDetails, date, type Expense } from './schema';
 
 // Adapter boundary for a future Audi export parser; no credentials or network calls.
 export const importedSessionSchema = z.object({
+  ...chargingDetails,
   source: z.string().min(1), source_record: z.string().min(1), vehicle: z.string().min(1),
-  date, energy_kwh: z.number().nonnegative(), measurement: z.enum(['charger','battery','unknown']),
+  date, energy_kwh: z.number().nonnegative(), duration_minutes: z.number().nonnegative().optional(), measurement: z.enum(['charger','battery','unknown']),
 }).strict();
 export type ImportedSession = z.infer<typeof importedSessionSchema>;
 export function reconcileSessions(input: ImportedSession[], recorded: Expense[]) {

@@ -223,3 +223,60 @@ it('includes accessories in acquisition and TCO, excluding them from operating c
   expect(report(d,'test').realized).toBe(10300);
   expect(preliminaryTCO(dataset(events),'test',20000)).toBe(10300);
 });
+
+describe('charging before monthly billing',()=>{
+  it('keeps precise energy and optional duration while costs are pending, then reconciles once',()=>{
+    const pending = expense({date:'2024-12-31',occurred_on:'2024-12-31',amount:null,energy_kwh:23.47,duration_minutes:42.5});
+    const d = validateDataset(dataset([pending]));
+    const r = report(d,'test',2024);
+    expect(r.energy.kwh).toBe(23.47);
+    expect(r.energy.averagePrice).toBeNull();
+    expect(r.unknownPrices).toBe(1);
+    expect(r.operating).toBe(0);
+    expect(r.ledger.find(l=>l.label==='charging')).toMatchObject({original:null,session:{date:'2024-12-31',energy_kwh:23.47,duration_minutes:42.5}});
+    const billed = validateDataset(dataset([{...pending,date:'2025-01-05',amount:7.04}]));
+    expect(report(billed,'test',2024).energy.kwh).toBe(23.47);
+    expect(report(billed,'test',2024).operating).toBe(0);
+    expect(report(billed,'test',2025).operating).toBe(7.04);
+    expect(report(billed,'test',2025).energy.sessions).toBe(0);
+    expect(report(billed,'test').energy.sessions).toBe(1);
+    expect(report(billed,'test').unknownPrices).toBe(0);
+    expect(report(billed,'test').energy.averagePrice).toBeCloseTo(7.04/23.47);
+  });
+  it('allows omitted or fractional duration but rejects invalid and non-charging durations',()=>{
+    expect(eventSchema.safeParse(expense()).success).toBe(true);
+    expect(eventSchema.safeParse(expense({duration_minutes:0})).success).toBe(true);
+    for (const duration_minutes of [-1, Infinity, NaN, '42:30', null]) {
+      expect(eventSchema.safeParse({...expense(),duration_minutes}).success).toBe(false);
+    }
+    expect(eventSchema.safeParse(expense({category:'insurance',energy_kwh:undefined,measurement:undefined,duration_minutes:42.5})).success).toBe(false);
+  });
+  it('preserves energy and duration when importing a pending session',()=>{
+    expect(missingCostEvent({vehicle:'test',source:'audi-export',source_record:'duration-test',date:'2024-06-01',energy_kwh:23.47,duration_minutes:42.5,measurement:'charger'})).toMatchObject({amount:null,energy_kwh:23.47,duration_minutes:42.5});
+  });
+});
+
+describe('charging providers and type',()=>{
+  const details = {card_provider:'Example Mobility',charger_provider:'Example Charging',charging_type:'DC' as const};
+  it('retains separate providers and charging type for pending and priced records',()=>{
+    for (const amount of [null, 12]) {
+      const d = validateDataset(dataset([expense({...details,amount})]));
+      expect(report(d,'test').ledger.find(l=>l.label==='charging')?.session).toMatchObject(details);
+      expect(report(d,'test').energy.kwh).toBe(200);
+      expect(report(d,'test').operating).toBe(amount ?? 0);
+    }
+    expect(eventSchema.safeParse(expense({charging_type:'AC'})).success).toBe(true);
+    expect(eventSchema.safeParse(expense()).success).toBe(true);
+  });
+  it('validates provider names and AC/DC values and restricts them to charging',()=>{
+    for (const fields of [{card_provider:' '},{charger_provider:''},{charging_type:'rapid'},{charging_type:'dc'}]) {
+      expect(eventSchema.safeParse({...expense(),...fields}).success).toBe(false);
+    }
+    for (const fields of [{card_provider:'Card'},{charger_provider:'Operator'},{charging_type:'AC'}]) {
+      expect(eventSchema.safeParse({...expense({category:'insurance',energy_kwh:undefined,measurement:undefined}),...fields}).success).toBe(false);
+    }
+  });
+  it('preserves provider and charging type details through import conversion',()=>{
+    expect(missingCostEvent({vehicle:'test',source:'export',source_record:'providers',date:'2024-06-01',energy_kwh:23.47,measurement:'charger',...details})).toMatchObject({...details,amount:null});
+  });
+});

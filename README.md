@@ -93,7 +93,7 @@ Optional `coverage: { start: YYYY-MM-DD, end: YYYY-MM-DD }` allocates an expense
 
 ### FX
 
-Rates are **foreign currency units per 1 EUR**. An amount of 250 CZK with rate 25 becomes EUR 10. Use the event's **payment month**, even if its coverage belongs to another year. Purchase and sale use their transaction’s `date` (payment or receipt date). EUR is implicitly 1; a zero-priced charge needs no exchange rate. If the payment month has no rate for the currency, the latest earlier available month is used and the dashboard shows one notice per currency listing affected payment months and the earlier rate month used for each. Future rates are never used. If no usable rate exists, the build still succeeds: the transaction remains visible, a currency-level error lists the affected months, and the transaction is excluded from all calculations, including charging energy and price/kWh metrics. Expense and income totals then describe only included records. Realized and preliminary TCO are withheld while any required FX rate is unavailable. Missing FX is distinct from an unknown charging price. Adding the monthly rate and rebuilding automatically replaces the fallback or restores excluded transactions. Currency codes must be uppercase three-letter codes.
+Rates are **foreign currency units per 1 EUR**. An amount of 250 CZK with rate 25 becomes EUR 10. Use the event's **payment month**, even if its coverage belongs to another year. Purchase and sale use their transaction’s `date` (payment or receipt date). EUR is implicitly 1; a zero-priced charge needs no exchange rate. If the payment month has no rate for the currency, the latest earlier available month is used and the dashboard shows one notice per currency listing affected payment months and the earlier rate month used for each. Fallback warnings are suppressed for the ongoing calendar month (using the browser’s local date), since its final rate may not yet be available; they appear once that month ends on the next dashboard render. Errors for conversions with no usable rate remain visible, including in the ongoing month. Future rates are never used. If no usable rate exists, the build still succeeds: the transaction remains visible, a currency-level error lists the affected months, and the transaction is excluded from all calculations, including charging energy and price/kWh metrics. Expense and income totals then describe only included records. Realized and preliminary TCO are withheld while any required FX rate is unavailable. Missing FX is distinct from an unknown charging price. Adding the monthly rate and rebuilding automatically replaces the fallback or restores excluded transactions. Currency codes must be uppercase three-letter codes.
 
 Maintain monthly source rates, not converted transaction amounts. Select a consistent monthly rate source/convention and document it in YAML comments. There is no automatic exchange-rate download in the MVP. Calculations preserve precision until display rounding to avoid cumulative rounding drift.
 
@@ -120,7 +120,31 @@ Total km = closing − opening odometer. Useful km = total − non-useful km. Li
 
 Use `category: subscriptions` for charging-card membership or monthly tariff fees. These count toward operating costs and TCO, but are not charging sessions, require no kWh, and are excluded from the session-based average price/kWh. Use `category: charging` for actual charging sessions. Add a coverage period to subscription fees when its dates are known.
 
-Charging expenses optionally include `energy_kwh`, `measurement: charger | battery | unknown`, and `occurred_on` (session date). Financial allocation uses payment/coverage; energy aggregation uses session date, falling back to payment date. Record free charging with `amount: 0`. `amount: null` is permitted only for charging and means **unknown price**, never free. Such entries contribute known energy but are flagged as missing financial costs.
+Charging expenses optionally include `energy_kwh`, `duration_minutes` (nonnegative minutes; fractions allowed), `measurement: charger | battery | unknown`, and `occurred_on` (session date). Financial allocation uses payment/coverage; energy aggregation uses session date, falling back to payment date. Record free charging with `amount: 0`. `amount: null` is permitted only for charging and means **unknown price**, never free. Such entries contribute known energy but are flagged as missing financial costs.
+
+### Record now, complete after the monthly bill
+
+Use one entry per charge with `amount: null` until its cost is known. For example (illustrative values only):
+
+```yaml
+- vehicle: example-car # replace with your vehicle ID
+  date: 2026-11-17 # provisional session date until payment is known
+  occurred_on: 2026-11-17 # keep this actual charging date
+  type: expense
+  category: charging
+  amount: null # pending bill, not free
+  currency: EUR # use the billing currency
+  energy_kwh: 23.47
+  duration_minutes: 42.5 # optional; 42 minutes 30 seconds
+  card_provider: Example Mobility # optional; card/app provider billing you
+  charger_provider: Example Charging # optional; actual charger operator
+  charging_type: DC # optional; AC or DC
+  measurement: charger # or battery / unknown, according to the reading
+```
+
+YAML numbers use a decimal point: enter `23.47` for a reading of 23,47 kWh. Energy is stored without rounding; the dashboard shows recorded kWh to two decimal places. Omit `duration_minutes` if unknown. Optional `card_provider` and `charger_provider` distinguish the card/app provider from the actual charger operator; they can be the same company. `charging_type` accepts `AC` or `DC`. Omit any unknown field (and the card provider for direct payment without a card/app provider). These fields are supported only on charging records and are preserved by the import interface. Providers, charging type and duration are shown with the session in the financial records and does not affect costs or energy calculations.
+
+When the bill arrives, update each existing entry's `amount` with that session's actual cost and `date` with the payment date. Preserve `occurred_on`, kWh and duration. If payment falls in another year, move the entry to that year's file. Do not add the full invoice again as another charging expense, which would double-count costs and sessions. Record any separate membership fee as `subscriptions`. Until costs are filled in, energy still counts, average price/kWh uses only priced sessions, and financial totals are flagged as incomplete. If the bill provides only a combined amount, keep the session costs pending until you can reconcile them; do not invent per-session prices.
 
 Energy completeness shows how many **recorded** sessions have kWh; it cannot establish coverage of absent sessions. Average price/kWh uses only records with both a known price and kWh, including free energy. Energy/100 km and km/kWh use total distance and all recorded kWh, and are labeled as charging-based metrics. Partial energy records are flagged.
 
