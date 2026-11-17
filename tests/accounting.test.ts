@@ -6,6 +6,7 @@ import { missingCostEvent, reconcileSessions, type ImportedSession } from '../sr
 const vehicle: Vehicle = {id:'test',manufacturer:'Synthetic',model:'Test fixture',first_registration:null,registration:null,handover:'2024-01-01',initial_state:{odometer_km:1000,soc_percent:80},battery:{usable_capacity_kwh:80}};
 const expense = (overrides:Partial<Extract<Event,{type:'expense'}>>={}): Extract<Event,{type:'expense'}> => ({vehicle:'test',type:'expense',date:'2024-06-01',category:'charging',amount:100,currency:'EUR',energy_kwh:200,measurement:'charger',...overrides});
 const purchase: Event = {vehicle:'test',type:'expense',category:'purchase',date:'2024-01-01',purchase_date:'2023-12-20',amount:30000,currency:'EUR'};
+const sale: Event = {vehicle:'test',type:'income',category:'sale',date:'2025-01-01',amount:20000,currency:'EUR'};
 const dataset = (events:Event[]=[], v:Vehicle=structuredClone(vehicle), includePurchase=true):Dataset => ({vehicles:[v],events:includePurchase?[purchase,...events]:events,rates:{'2024-06':{CZK:25}}});
 
 describe('FX',()=>{
@@ -24,7 +25,7 @@ describe('financial separation and TCO',()=>{
   const events:Event[]=[expense(),expense({category:'registration',amount:50,energy_kwh:undefined,measurement:undefined}),{vehicle:'test',type:'income',category:'thg',date:'2024-06-01',amount:30,currency:'EUR'},{vehicle:'test',type:'income',category:'employer_reimbursement',date:'2024-06-01',amount:20,currency:'EUR'}];
   it('separates operating, acquisition, THG and employer money',()=>{const r=report(dataset(events),'test');expect(r.operating).toBe(100);expect(r.acquisition).toBe(50);expect(r.gross).toBe(30150);expect(r.netVehicle).toBe(30120);expect(r.netPersonal).toBe(30100);expect(r.realized).toBeNull()});
   it('uses purchase payment date without depreciating',()=>{expect(report(dataset(events),'test',2023).purchaseInPeriod).toBe(0);expect(report(dataset(events),'test',2024).purchaseInPeriod).toBe(30000)});
-  it('only recognizes realized lifetime TCO after sale',()=>{const v={...vehicle,sale:{date:'2025-01-01',amount:20000,currency:'EUR',odometer_km:11000,soc_percent:30}};const r=report(dataset(events,v),'test');expect(r.realized).toBe(10120);expect(r.realizedPersonal).toBe(10100);expect(report(dataset(events,v),'test',2024).realized).toBeNull()});
+  it('only recognizes realized lifetime TCO after sale',()=>{const v={...vehicle,closing_state:{odometer_km:11000,soc_percent:30}};const r=report(dataset([...events,sale],v),'test');expect(r.realized).toBe(10120);expect(r.realizedPersonal).toBe(10100);expect(report(dataset([...events,sale],v),'test',2024).realized).toBeNull()});
   it('keeps hypothetical resale out of actual totals',()=>{const d=dataset(events);expect(preliminaryTCO(d,'test',20000)).toBe(10120);expect(report(d,'test').netVehicle).toBe(30120);expect(()=>preliminaryTCO(d,'test',-1)).toThrow()});
   it('does not fabricate unknown purchase or charging amounts',()=>{const d=dataset([expense({amount:null})],vehicle,false);const r=report(d,'test');expect(r.purchase).toBeNull();expect(r.unknownPrices).toBe(1);expect(r.ledger[0].eur).toBeNull();expect(preliminaryTCO(d,'test',0)).toBeNull()});
   it('isolates vehicles',()=>{const d=dataset(events);d.vehicles.push({...vehicle,id:'second'});expect(report(d,'second').operating).toBe(0)});
@@ -39,8 +40,8 @@ describe('mileage',()=>{
 describe('energy',()=>{
   it('includes free energy and uses a matched price/kWh subset',()=>{const r=report(dataset([expense(),expense({amount:0,energy_kwh:100}),expense({amount:50,energy_kwh:undefined})]),'test');expect(r.energy.kwh).toBe(300);expect(r.energy.averagePrice).toBeCloseTo(100/300);expect(r.energy.missingEnergy).toBe(1)});
   it('uses session date independently of payment and coverage',()=>{const r=report(dataset([expense({occurred_on:'2023-12-31'})]),'test',2023);expect(r.energy.kwh).toBe(200);expect(r.operating).toBe(0)});
-  it('adjusts lifetime opening and closing energy without changing costs',()=>{const v={...vehicle,sale:{date:'2025-01-01',amount:20000,currency:'EUR',odometer_km:11000,soc_percent:30}};const r=report(dataset([expense()],v),'test');expect(r.energy.adjusted).toBe(240);expect(r.energy.adjustedPer100).toBe(2.4);expect(r.realized).toBe(10100);expect(report(dataset([expense()],v),'test',2024).energy.adjusted).toBeNull()});
-  it('withholds inventory estimate with missing kWh or closing SoC',()=>{expect(report(dataset([expense()]),'test').energy.adjusted).toBeNull();const v={...vehicle,sale:{date:'2025-01-01',amount:20000,currency:'EUR',odometer_km:11000,soc_percent:30}};expect(report(dataset([expense({energy_kwh:undefined})],v),'test').energy.adjusted).toBeNull()});
+  it('adjusts lifetime opening and closing energy without changing costs',()=>{const v={...vehicle,closing_state:{odometer_km:11000,soc_percent:30}};const r=report(dataset([expense(),sale],v),'test');expect(r.energy.adjusted).toBe(240);expect(r.energy.adjustedPer100).toBe(2.4);expect(r.realized).toBe(10100);expect(report(dataset([expense(),sale],v),'test',2024).energy.adjusted).toBeNull()});
+  it('withholds inventory estimate with missing kWh or closing SoC',()=>{expect(report(dataset([expense()]),'test').energy.adjusted).toBeNull();const v={...vehicle,closing_state:{odometer_km:11000,soc_percent:30}};expect(report(dataset([expense({energy_kwh:undefined}),sale],v),'test').energy.adjusted).toBeNull()});
 });
 describe('validation',()=>{
   it('accepts vehicle details and reports an unrecorded purchase as unknown',()=>{expect(vehicleSchema.parse(vehicle)).toEqual(vehicle);expect(report(dataset([],vehicle,false),'test').purchase).toBeNull()});
@@ -95,8 +96,8 @@ describe('purchase transactions',()=>{
     expect(()=>eventSchema.parse({...expense(),purchase_date:'2024-01-01'})).toThrow();
   });
   it('rejects a sale preceding the purchase contract',()=>{
-    const v={...vehicle,handover:null,sale:{date:'2023-12-01',amount:20000,currency:'EUR',odometer_km:null,soc_percent:null}};
-    expect(()=>validateDataset(dataset([],v))).toThrow('Sale precedes purchase');
+    const v={...vehicle,handover:null};
+    expect(()=>validateDataset(dataset([{...sale,date:'2023-12-01'}],v))).toThrow('Sale precedes purchase');
   });
 });
 
@@ -159,7 +160,8 @@ describe('non-blocking FX',()=>{
   it('handles missing purchase and sale FX without losing recorded lifecycle data',()=>{
     const d=dataset([{...purchase,currency:'GBP'}],vehicle,false);
     const r=report(d,'test');expect(r.hasPurchase).toBe(true);expect(r.purchase).toBeNull();expect(r.gross).toBe(0);expect(r.missingFX).toBe(1);
-    d.vehicles[0]={...vehicle,sale:{date:'2025-01-01',amount:20000,currency:'USD',odometer_km:11000,soc_percent:30}};
+    d.vehicles[0]={...vehicle,closing_state:{odometer_km:11000,soc_percent:30}};
+    d.events.push({...sale,currency:'USD'});
     const sold=report(d,'test');expect(sold.sale).toBeNull();expect(sold.realized).toBeNull();expect(sold.missingFX).toBe(2);
     d.rates={'2023-12':{GBP:1,USD:1}};
     const converted=report(d,'test');expect(converted.realized).toBe(10000);expect(converted.fxIssues.every(i=>i.status==='fallback')).toBe(true);
@@ -183,8 +185,8 @@ it('includes accessories in acquisition and TCO, excluding them from operating c
     {vehicle:'test',type:'odometer',date:'2025-01-01',odometer_km:2000},
     {vehicle:'test',type:'non_useful_mileage',date:'2024-06-01',reason:'service',km:200},
   ];
-  const sold={...vehicle,sale:{date:'2025-01-01',amount:20000,currency:'EUR',odometer_km:2000,soc_percent:30}};
-  const d=dataset(events,sold);
+  const sold={...vehicle,closing_state:{odometer_km:2000,soc_percent:30}};
+  const d=dataset([...events,sale],sold);
   for (const basis of ['cash','accrual'] as const) {
     for (const year of [null,2024]) {
       const r=report(d,'test',year,basis);

@@ -6,17 +6,15 @@ export const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(s => Number.i
 const positive = z.number().nonnegative();
 const soc = positive.max(100);
 const currency = z.string().regex(/^[A-Z]{3}$/);
-const money = z.object({ date: date.nullable(), payment_date: date.nullable().optional(), amount: positive.nullable(), currency }).strict();
 export const vehicleSchema = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/), manufacturer: z.string().min(1), model: z.string().min(1),
   first_registration: date.nullable(), registration: date.nullable(), handover: date.nullable(),
   initial_state: z.object({ odometer_km: positive.nullable(), soc_percent: soc.nullable() }).strict(),
   battery: z.object({ usable_capacity_kwh: z.number().positive().nullable() }).strict().optional(),
-  sale: money.extend({ date, odometer_km: positive.nullable(), soc_percent: soc.nullable() }).optional(),
+  closing_state: z.object({ odometer_km: positive.nullable(), soc_percent: soc.nullable() }).strict().optional(),
 }).strict().superRefine((v, ctx) => {
   const bad = (message: string) => ctx.addIssue({ code: 'custom', message });
-  if (v.sale && v.handover && v.sale.date < v.handover) bad('Sale precedes handover');
-  if (v.sale?.odometer_km != null && v.initial_state.odometer_km != null && v.sale.odometer_km < v.initial_state.odometer_km) bad('Sale odometer precedes initial odometer');
+  if (v.closing_state?.odometer_km != null && v.initial_state.odometer_km != null && v.closing_state.odometer_km < v.initial_state.odometer_km) bad('Closing odometer precedes initial odometer');
 });
 const coverage = z.object({ start: date, end: date }).strict().refine(v => v.end >= v.start, 'Coverage end precedes start');
 const base = { vehicle: z.string(), date, note: z.string().optional() };
@@ -26,10 +24,14 @@ const expense = z.object({
   measurement: z.enum(['charger', 'battery', 'unknown']).optional(),
   source: z.string().optional(), source_record: z.string().optional(),
 }).strict();
-const income = z.object({ ...base, type: z.literal('income'), category: z.enum(['thg', 'employer_reimbursement']), amount: positive, currency, coverage: coverage.optional() }).strict();
+const income = z.object({ ...base, type: z.literal('income'), category: z.enum(['sale', 'thg', 'employer_reimbursement']), amount: positive, currency, sale_date: date.optional(), coverage: coverage.optional() }).strict();
 const odometer = z.object({ ...base, type: z.literal('odometer'), odometer_km: positive }).strict();
 const mileage = z.object({ ...base, type: z.literal('non_useful_mileage'), reason: z.enum(['collection', 'inspection', 'service']), km: positive }).strict();
 export const eventSchema = z.discriminatedUnion('type', [expense, income, odometer, mileage]).superRefine((e, ctx) => {
+  if (e.type === 'income') {
+    if (e.category === 'sale' && e.coverage) ctx.addIssue({ code: 'custom', message: 'Sale is recognized at payment; coverage is not supported' });
+    if (e.category !== 'sale' && e.sale_date) ctx.addIssue({ code: 'custom', message: 'sale_date belongs to sale only' });
+  }
   if (e.type !== 'expense') return;
   if (e.category === 'purchase' && e.coverage) ctx.addIssue({ code: 'custom', message: 'Purchase is recognized at payment; coverage is not supported' });
   if (e.category !== 'purchase' && e.purchase_date) ctx.addIssue({ code: 'custom', message: 'purchase_date belongs to purchase only' });
@@ -55,16 +57,21 @@ export function validateDataset(data: Dataset): Dataset {
     const purchases = events.filter((e): e is Expense => e.vehicle === v.id && e.type === 'expense' && e.category === 'purchase');
     if (purchases.length > 1) throw new Error(`Duplicate purchase for ${v.id}: record the full purchase once`);
     const purchasedOn = purchases[0]?.purchase_date ?? purchases[0]?.date;
-    if (v.sale && purchasedOn && v.sale.date < purchasedOn) throw new Error(`Sale precedes purchase: ${v.id}`);
+    const sales = events.filter((e): e is Extract<Event,{type:'income'}> => e.vehicle === v.id && e.type === 'income' && e.category === 'sale');
+    if (sales.length > 1) throw new Error(`Duplicate sale for ${v.id}: record the full proceeds once`);
+    const soldOn = sales[0]?.sale_date ?? sales[0]?.date;
+    if (soldOn && purchasedOn && soldOn < purchasedOn) throw new Error(`Sale precedes purchase: ${v.id}`);
+    if (soldOn && v.handover && soldOn < v.handover) throw new Error(`Sale precedes handover: ${v.id}`);
+    if (v.closing_state && !soldOn) throw new Error(`Closing state requires a sale transaction: ${v.id}`);
     const readings = events.filter((e): e is Extract<Event, {type:'odometer'}> => e.vehicle === v.id && e.type === 'odometer').map(e => ({date:e.date, km:e.odometer_km}));
     if (v.handover && v.initial_state.odometer_km !== null) readings.push({date:v.handover, km:v.initial_state.odometer_km});
-    if (v.sale?.odometer_km != null) readings.push({date:v.sale.date, km:v.sale.odometer_km});
+    if (soldOn && v.closing_state?.odometer_km != null) readings.push({date:soldOn, km:v.closing_state.odometer_km});
     readings.sort((a,b) => a.date.localeCompare(b.date));
     for (let i=1; i<readings.length; i++) {
       if (readings[i].km < readings[i-1].km || (readings[i].date === readings[i-1].date && readings[i].km !== readings[i-1].km)) throw new Error(`Inconsistent odometer for ${v.id}`);
     }
     for (const e of events.filter(e => e.vehicle === v.id && (e.type === 'odometer' || e.type === 'non_useful_mileage'))) {
-      if (!v.handover || e.date < v.handover || (v.sale && e.date > v.sale.date)) throw new Error(`Mileage outside ownership: ${v.id} ${e.date}`);
+      if (!v.handover || e.date < v.handover || (soldOn && e.date > soldOn)) throw new Error(`Mileage outside ownership: ${v.id} ${e.date}`);
     }
   }
   return {vehicles, events, rates};

@@ -20,7 +20,7 @@ npm run preview
 
 ## Files and entry workflow
 
-- `data/vehicles.yaml`: vehicle identifiers, lifecycle dates, optional sale and baseline readings. Purchase belongs in the annual event file.
+- `data/vehicles.yaml`: vehicle identifiers, lifecycle dates, initial readings and optional closing readings. Purchase and sale belong in annual event files.
 - `data/events/YYYY.yaml`: one file per event/payment calendar year, containing an `events` list. Multiple cars use the same annual file; every entry requires `vehicle`.
 - `data/exchange-rates.yaml`: monthly rates for automatic EUR conversion.
 - `src/accounting/`: pure calculations, validation and future import interface, with no filesystem or network calls.
@@ -28,13 +28,13 @@ npm run preview
 - `examples/`: isolated, explicitly synthetic examples, never loaded into the real dashboard.
 - `tests/`: synthetic fixtures and accounting tests.
 
-Start by filling in the vehicle's known facts; leave unknown values `null`. Add actual financial events and odometer measurements. For a second car, add another vehicle with a unique ID and reference it in its events. Record the purchase once as an expense with category `purchase` in the payment year’s event file. Sale remains in the vehicle’s `sale` block for now; do not duplicate it as income.
+Start by filling in the vehicle's known facts; leave unknown values `null`. Add actual financial events and odometer measurements. For a second car, add another vehicle with a unique ID and reference it in its events. Record the purchase once as an expense with category `purchase` in the payment year’s event file. Record the sale once as income with category `sale` in the receipt year’s event file.
 
 ## Vehicle lifecycle
 
 `first_registration` is the first registration anywhere; `registration` is registration to you; `handover` is physical delivery and the start of measured ownership mileage.
 
-`initial_state.odometer_km` and `soc_percent` describe handover. `battery.usable_capacity_kwh` is optional and must be actual known usable capacity. Add `sale` only after sale, with `date`, actual `amount`, `currency`, `odometer_km`, `soc_percent`, and optional `payment_date`. Unknown sale amount or readings can remain null. Dates use YYYY-MM-DD; amounts are nonnegative. Without a purchase transaction, the purchase price remains unknown, not zero. The example vehicle shows the full schema.
+`initial_state.odometer_km` and `soc_percent` describe handover. `battery.usable_capacity_kwh` is optional and must be actual known usable capacity. After sale, optional `closing_state` records `odometer_km` and `soc_percent` at the end of ownership. Unknown readings can remain null. A closing state requires a sale transaction, whose `sale_date` (or receipt `date`) determines the mileage boundary. Dates use YYYY-MM-DD; amounts are nonnegative. Without a purchase transaction, the purchase price remains unknown, not zero. The example vehicle shows the full schema.
 
 ## Purchase transaction
 
@@ -57,6 +57,24 @@ events:
 The purchase appears in the financial ledger and category breakdown and contributes exactly once to gross/net expenses and TCO. It is excluded from operating costs and energy metrics. Payment date determines the annual report and FX month in both cash and accrual views; optional `purchase_date` is informational. The MVP accepts at most one full-price purchase per vehicle and rejects duplicate purchases, coverage periods and missing amounts. Partial purchase payments are not yet modeled.
 
 
+## Sale transaction
+
+Store the full actual proceeds once in `data/events/YYYY.yaml`, using the receipt year:
+
+```yaml
+# Schema example: replace placeholders with actual values before use.
+events:
+  - vehicle: your-vehicle-id
+    date: YYYY-MM-DD # payment received
+    type: income
+    category: sale
+    amount: ACTUAL_PROCEEDS
+    currency: EUR
+    # sale_date: YYYY-MM-DD # ownership end date, if different from receipt date
+```
+
+The sale appears in the transaction list. Its receipt date controls annual cash/accrual reporting and FX conversion; `sale_date` controls the sold status and closing mileage boundary and defaults to receipt date. A sale is separate from THG income and employer reimbursements, is excluded from operating costs/km, and is subtracted exactly once in realized lifetime TCO. The resale slider is hidden once a sale is recorded. At most one full-proceeds sale per vehicle is accepted; coverage periods, partial proceeds and unknown sale amounts are not supported. Closing readings are optional for financial TCO, but required for complete mileage and battery inventory metrics. See `examples/2025.yaml` and `examples/vehicles.yaml` for a complete synthetic example.
+
 ## Financial events
 
 For expenses use `type: expense`, a fixed `category`, `amount`, `currency`, and `date` (payment date). Optional `note` is displayed beneath the category in the transaction overview; it does not affect calculations. All expense categories are validated:
@@ -69,13 +87,13 @@ For expenses use `type: expense`, a fixed `category`, `amount`, `currency`, and 
 
 `acquisition` covers incidental costs of acquiring the vehicle, such as collection travel or purchase-related fees; the vehicle price itself belongs in `purchase`. Accessories remain a separate category in the breakdown and count toward acquisition costs and TCO, even when bought after handover. Acquisition & Improvements are excluded from operating costs/km. `registration` means initial acquisition registration costs. Put recurring vehicle tax in `vehicle_tax`. Gross amounts should include taxes you actually paid. The MVP does not model refundable deposits, financing principal/interest, refunds or partial purchase payments; do not force those into unrelated categories.
 
-Income uses `type: income` with `category: thg` (vehicle-related) or `employer_reimbursement` (personal offset, always shown separately). No trip-level reimbursement attribution is needed.
+Income uses `type: income` with `category: sale` (vehicle proceeds), `thg` (vehicle-related), or `employer_reimbursement` (personal offset, always shown separately). No trip-level reimbursement attribution is needed.
 
-Optional `coverage: { start: YYYY-MM-DD, end: YYYY-MM-DD }` allocates an expense or income evenly over **inclusive calendar days**. Accrual annual reports use the overlap with each calendar year, including leap days. Cash reports use the payment date. Without coverage, both use payment date. Lifetime sums count each item exactly once. Purchase is not depreciated: it is recognized at payment in both views, and coverage is not allowed on purchase transactions.
+Optional `coverage: { start: YYYY-MM-DD, end: YYYY-MM-DD }` allocates an expense or income evenly over **inclusive calendar days**. Accrual annual reports use the overlap with each calendar year, including leap days. Cash reports use the payment date. Without coverage, both use payment date. Lifetime sums count each item exactly once. Purchase is not depreciated: it is recognized at payment in both views, and coverage is not allowed on purchase or sale transactions.
 
 ### FX
 
-Rates are **foreign currency units per 1 EUR**. An amount of 250 CZK with rate 25 becomes EUR 10. Use the event's **payment month**, even if its coverage belongs to another year. Purchase uses the transaction’s `date` (payment date). Sale uses its payment date override, or its date. EUR is implicitly 1; a zero-priced charge needs no exchange rate. If the payment month has no rate for the currency, the latest earlier available month is used and the dashboard shows one notice per currency listing affected payment months and the earlier rate month used for each. Future rates are never used. If no usable rate exists, the build still succeeds: the transaction remains visible, a currency-level error lists the affected months, and the transaction is excluded from all calculations, including charging energy and price/kWh metrics. Expense and income totals then describe only included records. Realized and preliminary TCO are withheld while any required FX rate is unavailable. Missing FX is distinct from an unknown charging price. Adding the monthly rate and rebuilding automatically replaces the fallback or restores excluded transactions. Currency codes must be uppercase three-letter codes.
+Rates are **foreign currency units per 1 EUR**. An amount of 250 CZK with rate 25 becomes EUR 10. Use the event's **payment month**, even if its coverage belongs to another year. Purchase and sale use their transaction’s `date` (payment or receipt date). EUR is implicitly 1; a zero-priced charge needs no exchange rate. If the payment month has no rate for the currency, the latest earlier available month is used and the dashboard shows one notice per currency listing affected payment months and the earlier rate month used for each. Future rates are never used. If no usable rate exists, the build still succeeds: the transaction remains visible, a currency-level error lists the affected months, and the transaction is excluded from all calculations, including charging energy and price/kWh metrics. Expense and income totals then describe only included records. Realized and preliminary TCO are withheld while any required FX rate is unavailable. Missing FX is distinct from an unknown charging price. Adding the monthly rate and rebuilding automatically replaces the fallback or restores excluded transactions. Currency codes must be uppercase three-letter codes.
 
 Maintain monthly source rates, not converted transaction amounts. Select a consistent monthly rate source/convention and document it in YAML comments. There is no automatic exchange-rate download in the MVP. Calculations preserve precision until display rounding to avoid cumulative rounding drift.
 

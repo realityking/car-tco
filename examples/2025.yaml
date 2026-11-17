@@ -1,0 +1,9 @@
+# SYNTHETIC EXAMPLE ONLY. Not loaded by the dashboard.
+events:
+  - vehicle: example-car
+    date: 2025-01-04 # receipt date determines the annual file and FX month
+    sale_date: 2025-01-03 # ownership ends on this date; defaults to receipt date
+    type: income
+    category: sale
+    amount: 25000
+    currency: EUR

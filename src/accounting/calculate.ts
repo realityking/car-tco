@@ -31,13 +31,15 @@ export function annualShare(e: {date:string; coverage?: {start:string; end:strin
   return overlap / (end-start);
 }
 export function mileage(v: Vehicle, events: Event[], year: number | null) {
+  const saleEvent = events.find(e => e.vehicle === v.id && e.type === 'income' && e.category === 'sale');
+  const soldOn = saleEvent?.type === 'income' ? saleEvent.sale_date ?? saleEvent.date : null;
   const points = events.filter((e): e is Extract<Event, {type:'odometer'}> => e.vehicle === v.id && e.type === 'odometer').map(e => ({date:e.date, km:e.odometer_km}));
   if (v.handover && v.initial_state.odometer_km !== null) points.push({date:v.handover, km:v.initial_state.odometer_km});
-  if (v.sale?.odometer_km != null) points.push({date:v.sale.date, km:v.sale.odometer_km});
+  if (soldOn && v.closing_state?.odometer_km != null) points.push({date:soldOn, km:v.closing_state.odometer_km});
   points.sort((a,b) => a.date.localeCompare(b.date));
   const latest = points.at(-1);
   const start = year === null ? v.handover : (v.handover && v.handover > `${year}-01-01` ? v.handover : `${year}-01-01`);
-  const end = year === null ? (v.sale?.date ?? latest?.date) : [v.sale?.date, latest?.date, `${year+1}-01-01`].filter((d):d is string => !!d).sort()[0];
+  const end = year === null ? (soldOn ?? latest?.date) : [soldOn, latest?.date, `${year+1}-01-01`].filter((d):d is string => !!d).sort()[0];
   const first = points.find(p => p.date === start), last = points.find(p => p.date === end);
   const total = first && last && end && start && end >= start ? last.km - first.km : null;
   const excluded = events.filter(e => e.vehicle === v.id && e.type === 'non_useful_mileage' && start && end && e.date >= start && e.date <= end && (year === null || e.date.startsWith(`${year}-`))).reduce((s,e) => s + (e.type === 'non_useful_mileage' ? e.km : 0),0);
@@ -76,7 +78,7 @@ export function report(data: Dataset, vehicleId: string, year: number | null = n
     ledger.push({date:e.date,label:e.category,note:e.note,coverage:e.coverage,original:e.amount,currency:e.currency,eur,fx,allocated:eur === null ? null : eur*share});
     if (eur === null) { if (e.amount === null) unknownPrices++; continue; }
     const amount = eur*share;
-    if (e.type === 'income') { if (e.category === 'thg') thg+=amount; else reimbursements+=amount; }
+    if (e.type === 'income') { if (e.category === 'thg') thg+=amount; else if (e.category === 'employer_reimbursement') reimbursements+=amount; }
     else {
       const category = e.category;
       breakdown[category]=(breakdown[category]??0)+amount;
@@ -84,17 +86,17 @@ export function report(data: Dataset, vehicleId: string, year: number | null = n
       if (acquisitionCategories.includes(e.category)) acquisition+=amount; else operating+=amount;
     }
   }
-  const saleDate = v.sale?.payment_date ?? v.sale?.date;
-  const saleFX = v.sale && v.sale.amount !== null && saleDate ? convertToEUR(v.sale.amount,v.sale.currency,saleDate,data.rates) : null;
-  const sale = saleFX?.eur ?? null;
-  if (saleFX && saleFX.status !== 'exact' && (year === null || saleDate?.startsWith(`${year}-`))) fxIssues.push({...saleFX,date:saleDate!,category:'sale',currency:v.sale!.currency});
+  const saleEvent = events.find(e => e.type === 'income' && e.category === 'sale');
+  const saleDate = saleEvent?.date ?? null;
+  const soldOn = saleEvent?.type === 'income' ? saleEvent.sale_date ?? saleEvent.date : null;
+  const sale = saleEvent ? conversions.get(saleEvent)?.eur ?? null : null;
   const missingFX = fxIssues.filter(issue => issue.status === 'missing').length;
   const saleInPeriod = saleDate && (year === null || saleDate.startsWith(`${year}-`)) ? sale : 0;
   const distance = mileage(v,events,year);
   const gross = operating+acquisition+(purchaseInPeriod??0);
   const netVehicle = gross-thg;
   const netPersonal = netVehicle-reimbursements;
-  const realized = year === null && v.sale && purchase !== null && sale !== null && !unknownPrices && !missingFX ? netVehicle-sale : null;
+  const realized = year === null && saleEvent && purchase !== null && sale !== null && !unknownPrices && !missingFX ? netVehicle-sale : null;
   const chargingInPeriod = events.filter((e): e is Extract<Event,{type:'expense'}> => e.type === 'expense' && e.category === 'charging' && (year === null || (e.occurred_on ?? e.date).startsWith(`${year}-`)));
   const excludedCharging = chargingInPeriod.filter(e => conversions.get(e)?.status === 'missing').length;
   const charging = chargingInPeriod.filter(e => conversions.get(e)?.status !== 'missing');
@@ -106,16 +108,16 @@ export function report(data: Dataset, vehicleId: string, year: number | null = n
   const measurements = [...new Set(withEnergy.map(e => e.measurement ?? 'unknown'))];
   const missingEnergy = charging.length-withEnergy.length;
   const opening = v.battery?.usable_capacity_kwh != null && v.initial_state.soc_percent !== null ? v.battery.usable_capacity_kwh*v.initial_state.soc_percent/100 : null;
-  const closing = v.battery?.usable_capacity_kwh != null && v.sale?.soc_percent != null ? v.battery.usable_capacity_kwh*v.sale.soc_percent/100 : null;
-  const adjusted = year === null && v.sale && opening !== null && closing !== null && !missingEnergy && !excludedCharging && energy+opening-closing >= 0 ? energy+opening-closing : null;
-  return {v,year,basis,fxIssues,missingFX,hasPurchase:!!purchaseEvent,operating,acquisition,purchasedOn,purchase,purchaseInPeriod,sale,saleInPeriod,gross,netVehicle,netPersonal,thg,reimbursements,realized,realizedPersonal: realized === null ? null : realized-reimbursements,unknownPrices,breakdown,ledger:ledger.sort((a,b)=>b.date.localeCompare(a.date)),distance,
+  const closing = v.battery?.usable_capacity_kwh != null && v.closing_state?.soc_percent != null ? v.battery.usable_capacity_kwh*v.closing_state.soc_percent/100 : null;
+  const adjusted = year === null && saleEvent && opening !== null && closing !== null && !missingEnergy && !excludedCharging && energy+opening-closing >= 0 ? energy+opening-closing : null;
+  return {v,year,basis,fxIssues,missingFX,hasPurchase:!!purchaseEvent,hasSale:!!saleEvent,soldOn,operating,acquisition,purchasedOn,purchase,purchaseInPeriod,sale,saleInPeriod,gross,netVehicle,netPersonal,thg,reimbursements,realized,realizedPersonal: realized === null ? null : realized-reimbursements,unknownPrices,breakdown,ledger:ledger.sort((a,b)=>b.date.localeCompare(a.date)),distance,
     operatingPerTotal:ratio(operating,distance.total),operatingPerUseful:ratio(operating,distance.useful),netOperatingPerUseful:ratio(operating-thg-reimbursements,distance.useful),
     energy:{excludedCharging,kwh:energy,sessions:charging.length,missingEnergy,missingPrices:charging.filter(e=>e.amount===null).length,measurements,averagePrice:ratio(pricedCost,pricedKwh),per100:ratio(energy*100,distance.total),kmPerKwh:distance.total === null ? null : ratio(distance.total,energy),opening,closing,adjusted,adjustedPer100:adjusted===null?null:ratio(adjusted*100,distance.total)}};
 }
 export function preliminaryTCO(data: Dataset, vehicle: string, resale: number) {
   if (!Number.isFinite(resale) || resale < 0) throw new Error('Resale value must be nonnegative');
   const r = report(data,vehicle);
-  return r.purchase === null || r.v.sale || r.unknownPrices || r.missingFX ? null : r.netVehicle-resale;
+  return r.purchase === null || r.hasSale || r.unknownPrices || r.missingFX ? null : r.netVehicle-resale;
 }
 export function availableYears(data: Dataset): number[] {
   const years = new Set<number>();
@@ -125,6 +127,6 @@ export function availableYears(data: Dataset): number[] {
     if (e.type === 'expense') add(e.occurred_on);
     if ((e.type === 'expense' || e.type === 'income') && e.coverage) for (let y=Number(e.coverage.start.slice(0,4)); y<=Number(e.coverage.end.slice(0,4)); y++) years.add(y);
   }
-  for (const v of data.vehicles) {add(v.handover);add(v.sale?.date);add(v.sale?.payment_date);}
+  for (const v of data.vehicles) {add(v.handover);}
   return [...years].sort((a,b)=>b-a);
 }

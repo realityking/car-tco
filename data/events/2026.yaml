@@ -93,8 +93,41 @@ events:
     category: acquisition
     amount: 83.99
     currency: EUR
-    note: 'Train to Nuremberg'
+    note: 'Train to Nurenberg'
 
+  - vehicle: q6
+    date: 2026-11-16
+    type: expense
+    category: acquisition
+    amount: 10.50
+    currency: EUR
+    note: "Hotel Nurenberg"
+
+  - vehicle: q6
+    date: 2026-11-16
+    type: expense
+    category: acquisition
+    amount: 5
+    currency: EUR
+    note: "Food Nurenberg/Neumarkt"
+
+  - vehicle: q6
+    date: 2026-11-16
+    type: expense
+    category: acquisition
+    amount: 317
+    currency: EUR
+    note: "Train to Neumarkt"
+
+  - vehicle: q6
+    date: 2026-11-16
+    type: expense
+    category: accessories
+    amount: 279.19
+    currency: EUR
+    note: "Luggage net, steel pedals"
+
+  
   - vehicle: q6
     date: 2026-11-18
     type: expense

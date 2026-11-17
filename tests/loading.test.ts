@@ -12,6 +12,7 @@ function fixture(check: (root: string) => void) {
     mkdirSync(join(root,'events'));
     for(const name of ['vehicles.yaml','exchange-rates.yaml']) writeFileSync(join(root,name),readFileSync(`examples/${name}`));
     writeFileSync(join(root,'events/2024.yaml'),readFileSync('examples/2024.yaml'));
+    writeFileSync(join(root,'events/2025.yaml'),readFileSync('examples/2025.yaml'));
     check(root);
   } finally { rmSync(root,{recursive:true,force:true}); }
 }

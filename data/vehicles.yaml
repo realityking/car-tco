@@ -7,8 +7,9 @@ vehicles:
     registration: 2026-11-10
     handover: 2026-11-16
     initial_state:
-      odometer_km: 16038
-      soc_percent: null
+      odometer_km: 16064
+      soc_percent: 98
     battery:
-      usable_capacity_kwh: null
-    # Add sale only once sold. See examples/vehicles.yaml.
+#      total_capacity_kwh: 94.9
+      usable_capacity_kwh: 94.9
+    # Add closing_state after sale; record proceeds as a sale income transaction.

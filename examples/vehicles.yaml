@@ -11,9 +11,6 @@ vehicles:
       soc_percent: 80
     battery:
       usable_capacity_kwh: 80
-    sale:
-      date: 2025-01-03
-      amount: 25000
-      currency: EUR
+    closing_state:
       odometer_km: 11000
       soc_percent: 30
