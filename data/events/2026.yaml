@@ -166,9 +166,63 @@ events:
     card_provider: PRE
     charger_provider: PRE
     charging_type: AC
-  
+
+  - vehicle: q6
+    date: 2026-11-18
+    type: odometer
+    odometer_km: 16405
+
+  - vehicle: q6
+    date: 2026-11-19
+    type: odometer
+    odometer_km: 16572
+
+  - vehicle: q6
+    date: 2026-11-19
+    type: odometer
+    odometer_km: 16572
+
+  - vehicle: q6
+    date: 2026-11-20
+    type: expense
+    category: charging
+    amount: null
+    currency: CZK
+    energy_kwh: 25.75
+    duration_minutes: 140
+    card_provider: PRE
+    charger_provider: PRE
+    charging_type: AC
+
+  - vehicle: q6
+    date: 2026-11-20
+    type: odometer
+    odometer_km: 16572
+
   - vehicle: q6
     date: 2026-11-21
+    type: expense
+    category: charging
+    amount: null
+    currency: CZK
+    energy_kwh: 48.39
+    duration_minutes: 265
+    card_provider: PRE
+    charger_provider: PRE
+    charging_type: AC
+
+  - vehicle: q6
+    date: 2026-11-21
+    type: odometer
+    odometer_km: 16605
+
+  - vehicle: q6
+    date: 2026-11-22
+    type: odometer
+    odometer_km: 16645
+
+  - vehicle: q6
+    date: 2026-11-28
     type: expense
     category: insurance
     amount: 2131.43
