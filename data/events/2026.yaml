@@ -222,7 +222,19 @@ events:
     odometer_km: 16645
 
   - vehicle: q6
-    date: 2026-11-28
+    date: 2026-11-23
+    type: expense
+    category: charging
+    amount: null
+    currency: CZK
+    energy_kwh: 12.83
+    duration_minutes: 71
+    card_provider: PRE
+    charger_provider: PRE
+    charging_type: AC
+
+  - vehicle: q6
+    date: 2026-11-23
     type: expense
     category: insurance
     amount: 2131.43
